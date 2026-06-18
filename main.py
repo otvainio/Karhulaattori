@@ -249,6 +249,7 @@ class Karhulaattori(QMainWindow):
         self.setup_calculator_tab()
         self.setup_symbolic_tab()
         self.setup_linear_algebra_tab()
+        self.setup_complex_tab()
         
         self.apply_styles()
         self.bind_shortcuts()
@@ -1214,6 +1215,266 @@ class Karhulaattori(QMainWindow):
             self.canvas.draw()
         except Exception as e:
             self.sym_output.setText(f"Plotting Error:\n{str(e)}")
+
+
+    # ── Complex Numbers Tab ─────────────────────────────────────────────────
+    def setup_complex_tab(self):
+        cx_widget = QWidget()
+        self.tabs.addTab(cx_widget, "Complex Numbers")
+
+        outer = QHBoxLayout(cx_widget)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        # ── LEFT: inputs + operations ────────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        field_style = """
+            background-color: #242933;
+            border: 1px solid #3b4252;
+            border-radius: 8px;
+            color: #eceff4;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            padding: 6px;
+        """
+
+        # Input z1 / z2 (rectangular or polar)
+        grp_z = QGroupBox("Complex Numbers  (use 'I' for imaginary unit — e.g.  3 + 4*I)")
+        gz = QVBoxLayout(grp_z)
+        self.cx_z1 = QLineEdit("3 + 4*I")
+        self.cx_z1.setPlaceholderText("z₁  e.g.  3 + 4*I   or   2*exp(I*pi/3)")
+        self.cx_z1.setStyleSheet(field_style)
+        self.cx_z2 = QLineEdit("1 - 2*I")
+        self.cx_z2.setPlaceholderText("z₂  e.g.  1 - 2*I")
+        self.cx_z2.setStyleSheet(field_style)
+        gz.addWidget(QLabel("z₁:"))
+        gz.addWidget(self.cx_z1)
+        gz.addWidget(QLabel("z₂:"))
+        gz.addWidget(self.cx_z2)
+        left_layout.addWidget(grp_z)
+
+        # Polar -> Rect helper
+        grp_polar = QGroupBox("Polar Input Helper  r e^(iθ)")
+        gp = QGridLayout(grp_polar)
+        gp.setSpacing(6)
+        gp.addWidget(QLabel("r:"), 0, 0)
+        self.cx_r = QLineEdit("5")
+        self.cx_r.setStyleSheet(field_style)
+        gp.addWidget(self.cx_r, 0, 1)
+        gp.addWidget(QLabel("θ (rad):"), 1, 0)
+        self.cx_theta = QLineEdit("pi/4")
+        self.cx_theta.setStyleSheet(field_style)
+        gp.addWidget(self.cx_theta, 1, 1)
+        conv_btn = QPushButton("Polar → z₁")
+        conv_btn.setStyleSheet("background-color: #3b4252; color: #88c0d0; font-weight: bold;")
+        conv_btn.clicked.connect(self._polar_to_z1)
+        gp.addWidget(conv_btn, 2, 0, 1, 2)
+        left_layout.addWidget(grp_polar)
+
+        # Operation buttons
+        ops_grp = QGroupBox("Operations")
+        og = QGridLayout(ops_grp)
+        og.setSpacing(8)
+        btn_style = "font-size: 12px; font-weight: bold; background-color: #2f384c; color: #a3be8c; min-height: 36px;"
+        cx_ops = [
+            ("z₁ + z₂",       "cx_add"),
+            ("z₁ − z₂",       "cx_sub"),
+            ("z₁ × z₂",       "cx_mul"),
+            ("z₁ / z₂",       "cx_div"),
+            ("|z₁| (modulus)","cx_mod"),
+            ("arg(z₁) (angle)","cx_arg"),
+            ("conj(z₁)",      "cx_conj"),
+            ("z₁ⁿ (De Moivre)","cx_pow"),
+            ("Polar Form z₁",  "cx_polar"),
+            ("Euler e^(iθ)",   "cx_euler"),
+            ("Re, Im parts",   "cx_parts"),
+            ("z₁² (square)",   "cx_sq"),
+        ]
+        for idx, (label, act) in enumerate(cx_ops):
+            btn = QPushButton(label)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_complex_op(a))
+            og.addWidget(btn, idx // 2, idx % 2)
+        left_layout.addWidget(ops_grp)
+
+        # Power n input (for De Moivre)
+        grp_n = QGroupBox("Power n  (for zⁿ)")
+        gn = QHBoxLayout(grp_n)
+        self.cx_n = QLineEdit("3")
+        self.cx_n.setStyleSheet(field_style)
+        gn.addWidget(self.cx_n)
+        left_layout.addWidget(grp_n)
+
+        left_layout.addStretch()
+        outer.addWidget(left, 2)
+
+        # ── RIGHT: output + Argand plane ─────────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        out_grp = QGroupBox("Result")
+        ogl = QVBoxLayout(out_grp)
+        self.cx_output = QTextBrowser()
+        self.cx_output.setMaximumHeight(160)
+        self.cx_output.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #2e3440;
+            border-radius: 8px;
+            color: #a3be8c;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+        """)
+        ogl.addWidget(self.cx_output)
+        right_layout.addWidget(out_grp)
+
+        # Argand plane (canvas)
+        argand_grp = QGroupBox("Argand Plane")
+        agl = QVBoxLayout(argand_grp)
+        self.cx_canvas = FigureCanvas(Figure(facecolor='#1e222b', figsize=(5, 4)))
+        self.cx_ax = self.cx_canvas.figure.subplots()
+        self._init_argand_axes()
+        agl.addWidget(self.cx_canvas)
+
+        plot_cx_btn = QPushButton("Plot z₁ and z₂ on Argand Plane")
+        plot_cx_btn.setStyleSheet("background-color: #88c0d0; color: #2e3440; font-weight: bold; min-height: 34px;")
+        plot_cx_btn.clicked.connect(self._plot_argand)
+        agl.addWidget(plot_cx_btn)
+        right_layout.addWidget(argand_grp)
+
+        outer.addWidget(right, 3)
+
+    def _init_argand_axes(self):
+        ax = self.cx_ax
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4')
+        ax.grid(color='#2e3440', linestyle='--')
+        ax.axhline(0, color='#4c566a', linewidth=1.2)
+        ax.axvline(0, color='#4c566a', linewidth=1.2)
+        ax.set_xlabel('Re', color='#81a1c1')
+        ax.set_ylabel('Im', color='#81a1c1')
+        ax.set_title('Argand Plane', color='#eceff4')
+        self.cx_canvas.draw()
+
+    def _polar_to_z1(self):
+        try:
+            r = sympy.sympify(self.cx_r.text())
+            theta = sympy.sympify(self.cx_theta.text())
+            z = r * sympy.exp(sympy.I * theta)
+            z_rect = sympy.simplify(z.rewrite(sympy.cos))
+            self.cx_z1.setText(str(sympy.expand(sympy.nsimplify(z_rect))))
+        except Exception as e:
+            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    def _plot_argand(self):
+        try:
+            z1 = sympy.sympify(self.cx_z1.text())
+            z2 = sympy.sympify(self.cx_z2.text())
+            ax = self.cx_ax
+            ax.clear()
+            self._init_argand_axes()
+
+            def _draw_point(ax, z, label, color):
+                re = float(sympy.re(z))
+                im = float(sympy.im(z))
+                ax.annotate("", xy=(re, im), xytext=(0, 0),
+                            arrowprops=dict(arrowstyle='->', color=color, lw=2))
+                ax.plot(re, im, 'o', color=color)
+                ax.annotate(f" {label} = {re:.3g}+{im:.3g}j", (re, im),
+                            color='#eceff4', fontsize=9)
+
+            _draw_point(ax, z1, 'z₁', '#88c0d0')
+            _draw_point(ax, z2, 'z₂', '#a3be8c')
+            self.cx_canvas.draw()
+        except Exception as e:
+            self.cx_output.setHtml(f"<b style='color:#bf616a'>Plot Error:</b> {e}")
+
+    def execute_complex_op(self, action):
+        try:
+            z1 = sympy.sympify(self.cx_z1.text())
+            z2 = sympy.sympify(self.cx_z2.text())
+
+            def fmt(z):
+                z = sympy.simplify(z)
+                re = sympy.re(z)
+                im = sympy.im(z)
+                return f"{sympy.nsimplify(re, rational=False)} + {sympy.nsimplify(im, rational=False)}*I"
+
+            def polar_str(z):
+                z = sympy.simplify(z)
+                r = sympy.Abs(z)
+                theta = sympy.arg(z)
+                r_s = sympy.nsimplify(r, rational=False)
+                t_s = sympy.nsimplify(theta, rational=False)
+                return (f"r = {r_s}   (≈ {float(r):.5g})<br>"
+                        f"θ = {t_s}   (≈ {float(theta):.5g} rad,  "
+                        f"{float(theta)*180/3.14159265:.4g}°)<br>"
+                        f"Euler form: {r_s} · e^(i·{t_s})")
+
+            if action == "cx_add":
+                r = z1 + z2
+                self.cx_output.setHtml(f"<b>z₁ + z₂ =</b><br>{fmt(r)}")
+            elif action == "cx_sub":
+                r = z1 - z2
+                self.cx_output.setHtml(f"<b>z₁ − z₂ =</b><br>{fmt(r)}")
+            elif action == "cx_mul":
+                r = z1 * z2
+                self.cx_output.setHtml(f"<b>z₁ × z₂ =</b><br>{fmt(r)}")
+            elif action == "cx_div":
+                r = z1 / z2
+                self.cx_output.setHtml(f"<b>z₁ / z₂ =</b><br>{fmt(r)}")
+            elif action == "cx_mod":
+                r = sympy.Abs(z1)
+                self.cx_output.setHtml(f"<b>|z₁| =</b> {sympy.nsimplify(r)}   (≈ {float(r):.6g})")
+            elif action == "cx_arg":
+                r = sympy.arg(z1)
+                self.cx_output.setHtml(
+                    f"<b>arg(z₁) =</b><br>"
+                    f"{sympy.nsimplify(r, rational=False)}   (≈ {float(r):.6g} rad,  "
+                    f"{float(r)*180/3.14159265:.5g}°)"
+                )
+            elif action == "cx_conj":
+                r = sympy.conjugate(z1)
+                self.cx_output.setHtml(f"<b>conj(z₁) =</b><br>{fmt(r)}")
+            elif action == "cx_pow":
+                n = sympy.sympify(self.cx_n.text())
+                r = z1 ** n
+                mod = sympy.Abs(z1) ** n
+                theta_n = n * sympy.arg(z1)
+                self.cx_output.setHtml(
+                    f"<b>z₁ⁿ  (n = {n}) =</b><br>{fmt(r)}<br><br>"
+                    f"<b>De Moivre:</b><br>|z₁|ⁿ = {sympy.nsimplify(mod)}<br>"
+                    f"n·arg(z₁) = {sympy.nsimplify(theta_n, rational=False)} rad"
+                )
+            elif action == "cx_polar":
+                self.cx_output.setHtml(f"<b>Polar form of z₁:</b><br>{polar_str(z1)}")
+            elif action == "cx_euler":
+                theta = sympy.sympify(self.cx_theta.text())
+                r_val = sympy.sympify(self.cx_r.text())
+                e_form = r_val * sympy.exp(sympy.I * theta)
+                expanded = sympy.expand(e_form.rewrite(sympy.cos))
+                self.cx_output.setHtml(
+                    f"<b>Euler's formula:</b><br>"
+                    f"{r_val} · e^(i·{theta})<br><br>"
+                    f"= {r_val} · (cos({theta}) + i·sin({theta}))<br><br>"
+                    f"= {sympy.simplify(expanded)}"
+                )
+            elif action == "cx_parts":
+                self.cx_output.setHtml(
+                    f"<b>z₁ = {fmt(z1)}</b><br><br>"
+                    f"Re(z₁) = {sympy.nsimplify(sympy.re(z1))}<br>"
+                    f"Im(z₁) = {sympy.nsimplify(sympy.im(z1))}"
+                )
+            elif action == "cx_sq":
+                r = z1 ** 2
+                self.cx_output.setHtml(f"<b>z₁² =</b><br>{fmt(r)}")
+
+        except Exception as e:
+            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b><br>{str(e)}")
 
 
 if __name__ == "__main__":
