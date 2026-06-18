@@ -11,7 +11,7 @@ from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QGridLayout, QListWidget, QListWidgetItem,
-    QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QGroupBox
+    QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QTextEdit, QGroupBox, QScrollArea
 )
 
 # Premium Nordic Dark Theme QSS Stylesheet
@@ -248,6 +248,7 @@ class Karhulaattori(QMainWindow):
         # Tabs setup
         self.setup_calculator_tab()
         self.setup_symbolic_tab()
+        self.setup_linear_algebra_tab()
         
         self.apply_styles()
         self.bind_shortcuts()
@@ -465,7 +466,8 @@ class Karhulaattori(QMainWindow):
         ag_layout.setSpacing(8)
         
         sym_ops = [
-            ("Solve f(x) = 0", "solve_eq"),
+            ("Solve Equation(s)", "solve_eq"),
+            ("Solve ODE", "solve_ode"),
             ("Derivative (d/dx)", "derive_eq"),
             ("Integral (∫dx)", "integrate_eq"),
             ("Simplify Formula", "simplify_eq"),
@@ -545,6 +547,235 @@ class Karhulaattori(QMainWindow):
         
         # Initial Plot
         self.plot_function()
+
+    def setup_linear_algebra_tab(self):
+        la_widget = QWidget()
+        self.tabs.addTab(la_widget, "Linear Algebra")
+
+        outer = QHBoxLayout(la_widget)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        # ── LEFT: inputs ──────────────────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        input_style = """
+            background-color: #242933;
+            border: 1px solid #3b4252;
+            border-radius: 8px;
+            color: #eceff4;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            padding: 6px;
+        """
+
+        # Matrix A
+        grp_a = QGroupBox("Matrix A  (rows by ';', cols by spaces — e.g.  1 2; 3 4)")
+        la = QVBoxLayout(grp_a)
+        self.la_mat_a = QTextEdit("1 2; 3 4")
+        self.la_mat_a.setFixedHeight(80)
+        self.la_mat_a.setStyleSheet(input_style)
+        la.addWidget(self.la_mat_a)
+        left_layout.addWidget(grp_a)
+
+        # Matrix B
+        grp_b = QGroupBox("Matrix B")
+        lb = QVBoxLayout(grp_b)
+        self.la_mat_b = QTextEdit("5 6; 7 8")
+        self.la_mat_b.setFixedHeight(80)
+        self.la_mat_b.setStyleSheet(input_style)
+        lb.addWidget(self.la_mat_b)
+        left_layout.addWidget(grp_b)
+
+        # Vector u
+        grp_u = QGroupBox("Vector u  (space or comma separated, e.g.  1 2 3)")
+        lu = QVBoxLayout(grp_u)
+        self.la_vec_u = QLineEdit("1 2 3")
+        self.la_vec_u.setStyleSheet(input_style)
+        lu.addWidget(self.la_vec_u)
+        left_layout.addWidget(grp_u)
+
+        # Vector v
+        grp_v = QGroupBox("Vector v")
+        lv = QVBoxLayout(grp_v)
+        self.la_vec_v = QLineEdit("4 5 6")
+        self.la_vec_v.setStyleSheet(input_style)
+        lv.addWidget(self.la_vec_v)
+        left_layout.addWidget(grp_v)
+
+        left_layout.addStretch()
+        outer.addWidget(left, 2)
+
+        # ── MIDDLE: operation buttons ──────────────────────────────────
+        mid = QWidget()
+        mid_layout = QVBoxLayout(mid)
+        mid_layout.setSpacing(8)
+
+        btn_style = "font-size: 12px; font-weight: bold; background-color: #2f384c; color: #a3be8c; min-height: 38px;"
+
+        matrix_ops = [
+            ("det(A)",       "det_a"),
+            ("inv(A)",       "inv_a"),
+            ("Transpose A",  "tra_a"),
+            ("Eigenvalues A","eig_a"),
+            ("A × B",        "mat_mul"),
+            ("A + B",        "mat_add"),
+            ("Rank A",       "rank_a"),
+            ("Row Echelon A","rref_a"),
+        ]
+        vector_ops = [
+            ("u · v (dot)",  "dot_uv"),
+            ("u × v (cross)","cross_uv"),
+            ("|u| (norm)",   "norm_u"),
+            ("Angle(u,v)",   "angle_uv"),
+            ("u + v",        "vec_add"),
+            ("Projection u→v","proj_uv"),
+        ]
+
+        mat_grp = QGroupBox("Matrix Operations")
+        mg_layout = QVBoxLayout(mat_grp)
+        for label, act in matrix_ops:
+            btn = QPushButton(label)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_la_op(a))
+            mg_layout.addWidget(btn)
+        mid_layout.addWidget(mat_grp)
+
+        vec_grp = QGroupBox("Vector Operations")
+        vg_layout = QVBoxLayout(vec_grp)
+        for label, act in vector_ops:
+            btn = QPushButton(label)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_la_op(a))
+            vg_layout.addWidget(btn)
+        mid_layout.addWidget(vec_grp)
+        mid_layout.addStretch()
+
+        outer.addWidget(mid, 1)
+
+        # ── RIGHT: output ──────────────────────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        out_grp = QGroupBox("Result")
+        og_layout = QVBoxLayout(out_grp)
+        self.la_output = QTextBrowser()
+        self.la_output.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #2e3440;
+            border-radius: 8px;
+            color: #a3be8c;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+        """)
+        og_layout.addWidget(self.la_output)
+        right_layout.addWidget(out_grp)
+        outer.addWidget(right, 2)
+
+    # ── Linear Algebra execution ───────────────────────────────────────
+    def _parse_matrix(self, text):
+        """Parse a matrix from text.  Rows separated by ';', cols by spaces or commas."""
+        rows = [r.strip() for r in text.strip().replace('\n', ';').split(';') if r.strip()]
+        data = []
+        for row in rows:
+            cols = [c for c in row.replace(',', ' ').split() if c]
+            data.append([sympy.sympify(c) for c in cols])
+        return sympy.Matrix(data)
+
+    def _parse_vector(self, text):
+        """Parse a vector from a single line (space or comma separated)."""
+        parts = [c for c in text.strip().replace(',', ' ').split() if c]
+        return sympy.Matrix([sympy.sympify(p) for p in parts])
+
+    def execute_la_op(self, action):
+        try:
+            if action in ("det_a", "inv_a", "tra_a", "eig_a", "rank_a", "rref_a"):
+                A = self._parse_matrix(self.la_mat_a.toPlainText())
+
+                if action == "det_a":
+                    result = A.det()
+                    self.la_output.setHtml(f"<b>det(A) =</b><br>{result}")
+
+                elif action == "inv_a":
+                    result = A.inv()
+                    self.la_output.setHtml(f"<b>A⁻¹ =</b><br><pre>{result}</pre>")
+
+                elif action == "tra_a":
+                    result = A.T
+                    self.la_output.setHtml(f"<b>Aᵀ =</b><br><pre>{result}</pre>")
+
+                elif action == "eig_a":
+                    eigs = A.eigenvals()
+                    evecs = A.eigenvects()
+                    html = "<b>Eigenvalues:</b><br>"
+                    for val, mult, _ in evecs:
+                        html += f"λ = {val}  (multiplicity {mult})<br>"
+                    html += "<br><b>Eigenvectors:</b><br>"
+                    for val, mult, vecs in evecs:
+                        for v in vecs:
+                            html += f"λ={val}: {v.T}<br>"
+                    self.la_output.setHtml(html)
+
+                elif action == "rank_a":
+                    result = A.rank()
+                    self.la_output.setHtml(f"<b>rank(A) =</b> {result}")
+
+                elif action == "rref_a":
+                    rref_mat, pivots = A.rref()
+                    self.la_output.setHtml(
+                        f"<b>Row Echelon Form:</b><br><pre>{rref_mat}</pre>"
+                        f"<br><b>Pivot columns:</b> {list(pivots)}"
+                    )
+
+            elif action in ("mat_mul", "mat_add"):
+                A = self._parse_matrix(self.la_mat_a.toPlainText())
+                B = self._parse_matrix(self.la_mat_b.toPlainText())
+                if action == "mat_mul":
+                    result = A * B
+                    self.la_output.setHtml(f"<b>A × B =</b><br><pre>{result}</pre>")
+                else:
+                    result = A + B
+                    self.la_output.setHtml(f"<b>A + B =</b><br><pre>{result}</pre>")
+
+            else:  # vector ops
+                u = self._parse_vector(self.la_vec_u.text())
+                v = self._parse_vector(self.la_vec_v.text())
+
+                if action == "dot_uv":
+                    result = u.dot(v)
+                    self.la_output.setHtml(f"<b>u · v =</b> {result}")
+
+                elif action == "cross_uv":
+                    result = u.cross(v)
+                    self.la_output.setHtml(f"<b>u × v =</b><br>{result.T}")
+
+                elif action == "norm_u":
+                    result = sympy.sqrt(u.dot(u))
+                    self.la_output.setHtml(f"<b>|u| =</b> {result}")
+
+                elif action == "angle_uv":
+                    cos_theta = u.dot(v) / (sympy.sqrt(u.dot(u)) * sympy.sqrt(v.dot(v)))
+                    angle_rad = sympy.acos(sympy.simplify(cos_theta))
+                    angle_deg = sympy.deg(angle_rad) if hasattr(sympy, 'deg') else sympy.N(angle_rad * 180 / sympy.pi)
+                    self.la_output.setHtml(
+                        f"<b>Angle (rad):</b> {sympy.simplify(angle_rad)}<br>"
+                        f"<b>Angle (°):</b> {sympy.N(angle_rad * 180 / sympy.pi, 5)}"
+                    )
+
+                elif action == "vec_add":
+                    result = u + v
+                    self.la_output.setHtml(f"<b>u + v =</b><br>{result.T}")
+
+                elif action == "proj_uv":
+                    proj = (u.dot(v) / v.dot(v)) * v
+                    self.la_output.setHtml(f"<b>proj_v(u) =</b><br>{proj.T}")
+
+        except Exception as e:
+            self.la_output.setHtml(f"<b style='color:#bf616a'>Error:</b><br>{str(e)}")
+
 
     def bind_shortcuts(self):
         # Digits & decimal
@@ -789,6 +1020,32 @@ class Karhulaattori(QMainWindow):
         self.history_list.clear()
 
     # Dedicated Symbolic Solver operations
+    def _parse_ode(self, text):
+        """Convert user ODE notation to a sympy Eq ready for dsolve.
+        Supports y', y'', y (function of x).
+        Example inputs:
+          y'' + y = 0
+          y' = y
+          y'' - 3*y' + 2*y = 0
+        """
+        x = sympy.Symbol('x')
+        y = sympy.Function('y')
+
+        # Replace y'' with y(x).diff(x,2) and y' with y(x).diff(x)
+        text = text.replace("y''", "y(x).diff(x,2)").replace("y'", "y(x).diff(x)")
+        # Replace bare y (not followed by '(' to avoid touching y(x)) with y(x)
+        import re
+        text = re.sub(r'\by\b(?!\()', 'y(x)', text)
+
+        if '=' in text:
+            lhs_str, rhs_str = text.split('=', 1)
+            lhs = sympy.sympify(lhs_str.strip(), locals={'x': x, 'y': y})
+            rhs = sympy.sympify(rhs_str.strip(), locals={'x': x, 'y': y})
+            return sympy.Eq(lhs, rhs), x, y
+        else:
+            expr = sympy.sympify(text.strip(), locals={'x': x, 'y': y})
+            return sympy.Eq(expr, 0), x, y
+
     def execute_symbolic_op(self, action):
         func_str = self.f_x_input.text().strip()
         if not func_str:
@@ -796,6 +1053,22 @@ class Karhulaattori(QMainWindow):
             return
             
         try:
+            if action == "solve_ode":
+                try:
+                    ode_eq, x, y = self._parse_ode(func_str)
+                    sol = sympy.dsolve(ode_eq, y(x))
+                    self.sym_output.setHtml(
+                        f"<b>ODE:</b> {func_str}<br><br>"
+                        f"<b>General Solution:</b><br>"
+                        f"<code>{sol}</code>"
+                    )
+                except Exception as e:
+                    self.sym_output.setHtml(
+                        f"<b>ODE solving failed:</b><br>{str(e)}<br><br>"
+                        f"<i>Tip: Write equations like <code>y'' + y = 0</code> or <code>y' = y</code></i>"
+                    )
+                return
+
             # Check for system of equations (separated by commas)
             if "," in func_str:
                 eqs_strs = func_str.split(",")
