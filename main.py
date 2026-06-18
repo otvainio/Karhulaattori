@@ -289,13 +289,17 @@ class Karhulaattori(QMainWindow):
 
         self.setup_calculator_tab()
         self.setup_symbolic_tab()
+        self.setup_geometry_tab()
         self.setup_linear_algebra_tab()
         self.setup_complex_tab()
         self.setup_calculus_tab()
+        self.setup_de_tab()
         self.setup_statistics_tab()
         self.setup_3d_graphing_tab()
         self.setup_number_theory_tab()
         self.setup_analysis_tab()
+        self.setup_numerical_tab()
+        self.setup_graph_theory_tab()
         self.setup_history_tab()
         
         self.apply_styles()
@@ -531,7 +535,6 @@ class Karhulaattori(QMainWindow):
         
         sym_ops = [
             ("Solve Equation(s)", "solve_eq"),
-            ("Solve ODE",         "solve_ode"),
             ("Simplify Formula",  "simplify_eq"),
         ]
         
@@ -718,6 +721,750 @@ class Karhulaattori(QMainWindow):
 
         # Initial Plot
         self.plot_function()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Geometry tab  (Triangle · Conics · Shapes · Transformations)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def setup_geometry_tab(self):
+        w = QWidget()
+        self.tabs.addTab(w, "Geometry")
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        self._geo_tabs = QTabWidget()
+        outer.addWidget(self._geo_tabs)
+        self._geo_field = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        self._geo_btn = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+        )
+        self._setup_geo_triangle()
+        self._setup_geo_conics()
+        self._setup_geo_shapes()
+        self._setup_geo_transforms()
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
+    def _geo_axes(self, ax, equal=True):
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values():
+            sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        if equal:
+            ax.set_aspect('equal', adjustable='datalim')
+
+    def _geo_output(self, layout, attr, max_h=120):
+        tb = QTextBrowser()
+        tb.setMaximumHeight(max_h)
+        tb.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        setattr(self, attr, tb)
+        layout.addWidget(tb)
+
+    # ── Triangle Solver ──────────────────────────────────────────────────────
+
+    def _setup_geo_triangle(self):
+        tab = QWidget()
+        self._geo_tabs.addTab(tab, "Triangle")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Known values  (leave unknowns blank)")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        hint = QLabel("Sides a, b, c  opposite to angles A, B, C (degrees).")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setWordWrap(True)
+        g.addWidget(hint, 0, 0, 1, 4)
+
+        self._tri_fields = {}
+        for col, name in enumerate(['a', 'b', 'c', 'A', 'B', 'C']):
+            g.addWidget(QLabel(name + " ="), 1, col % 3 * 2)
+            le = QLineEdit()
+            le.setStyleSheet(self._geo_field)
+            le.setPlaceholderText("?")
+            g.addWidget(le, 1 + col // 3, col % 3 * 2 + 1)
+            self._tri_fields[name] = le
+
+        # Presets
+        preset_row = QHBoxLayout()
+        for label, vals in [
+            ("3-4-5", dict(a='3', b='4', c='5', A='', B='', C='')),
+            ("Equilateral", dict(a='5', b='5', c='5', A='', B='', C='')),
+            ("30-60-90", dict(a='1', b='', c='2', A='30', B='60', C='90')),
+        ]:
+            btn = QPushButton(label)
+            btn.setStyleSheet(self._geo_btn.replace("min-height: 34px", "min-height: 26px"))
+            btn.clicked.connect(lambda _, v=vals: [self._tri_fields[k].setText(v[k]) for k in v])
+            preset_row.addWidget(btn)
+        g.addLayout(preset_row, 4, 0, 1, 6)
+
+        solve_btn = QPushButton("Solve Triangle")
+        solve_btn.setStyleSheet(self._geo_btn)
+        solve_btn.clicked.connect(self._run_triangle)
+        g.addWidget(solve_btn, 5, 0, 1, 6)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._geo_tri_fig = Figure(facecolor='#1e222b')
+        self._geo_tri_canvas = FigureCanvas(self._geo_tri_fig)
+        rl.addWidget(self._geo_tri_canvas, 1)
+        self._geo_output(rl, '_geo_tri_out', 140)
+        outer.addWidget(right, 3)
+
+    def _run_triangle(self):
+        import math as _m
+        try:
+            def _get(name):
+                t = self._tri_fields[name].text().strip()
+                return float(t) if t else None
+
+            a, b, c = _get('a'), _get('b'), _get('c')
+            A, B, C = _get('A'), _get('B'), _get('C')
+
+            # Convert angles to radians
+            def r(deg): return _m.radians(deg) if deg is not None else None
+            Ar, Br, Cr = r(A), r(B), r(C)
+
+            known_sides  = sum(x is not None for x in [a, b, c])
+            known_angles = sum(x is not None for x in [A, B, C])
+
+            # Fill missing angle if two angles known
+            if known_angles == 2:
+                if A is None: A = 180 - (B + C); Ar = r(A)
+                elif B is None: B = 180 - (A + C); Br = r(B)
+                else:          C = 180 - (A + B); Cr = r(C)
+                known_angles = 3
+
+            # SSS
+            if known_sides == 3 and a and b and c:
+                cos_A = (b**2 + c**2 - a**2) / (2*b*c)
+                A = _m.degrees(_m.acos(max(-1, min(1, cos_A)))); Ar = r(A)
+                cos_B = (a**2 + c**2 - b**2) / (2*a*c)
+                B = _m.degrees(_m.acos(max(-1, min(1, cos_B)))); Br = r(B)
+                C = 180 - A - B; Cr = r(C)
+            # SAS
+            elif known_sides == 2 and known_angles >= 1:
+                if a and b and Cr:
+                    c = _m.sqrt(a**2 + b**2 - 2*a*b*_m.cos(Cr))
+                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = _m.degrees(_m.acos(max(-1,min(1,cos_A)))); Ar=r(A)
+                    B = 180 - A - C; Br = r(B)
+                elif a and c and Br:
+                    b = _m.sqrt(a**2 + c**2 - 2*a*c*_m.cos(Br))
+                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = _m.degrees(_m.acos(max(-1,min(1,cos_A)))); Ar=r(A)
+                    C = 180 - A - B; Cr = r(C)
+                elif b and c and Ar:
+                    a = _m.sqrt(b**2 + c**2 - 2*b*c*_m.cos(Ar))
+                    cos_B = (a**2 + c**2 - b**2)/(2*a*c); B = _m.degrees(_m.acos(max(-1,min(1,cos_B)))); Br=r(B)
+                    C = 180 - A - B; Cr = r(C)
+            # ASA / AAS — law of sines
+            elif known_angles == 3 and known_sides >= 1:
+                if a and Ar:
+                    k = a / _m.sin(Ar)
+                elif b and Br:
+                    k = b / _m.sin(Br)
+                else:
+                    k = c / _m.sin(Cr)
+                if not a: a = k * _m.sin(Ar)
+                if not b: b = k * _m.sin(Br)
+                if not c: c = k * _m.sin(Cr)
+
+            if None in (a, b, c, A, B, C):
+                raise ValueError("Not enough information to solve the triangle.")
+
+            # Derived quantities
+            s = (a + b + c) / 2
+            area = _m.sqrt(s*(s-a)*(s-b)*(s-c))
+            R = (a * b * c) / (4 * area)   # circumradius
+            r_in = area / s                  # inradius
+            h_a = 2*area / a
+
+            # Build triangle vertices: place c on x-axis, A at origin
+            Bx, By = c, 0.0
+            Cx = (a**2 - b**2 + c**2) / (2*c)
+            Cy = _m.sqrt(max(0, a**2 - (c - Cx)**2)) if a**2 - (c-Cx)**2 >= 0 else 0
+            verts = np.array([[0,0],[Bx,By],[Cx,Cy],[0,0]])
+
+            self._geo_tri_fig.clear()
+            ax = self._geo_tri_fig.add_subplot(111)
+            self._geo_axes(ax)
+            ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
+            ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.12, color='#88c0d0')
+            for (px,py), lbl in zip([(0,0),(Bx,By),(Cx,Cy)], ['A','B','C']):
+                ax.annotate(lbl, (px,py), fontsize=11, color='#ebcb8b',
+                            textcoords='offset points', xytext=(6,6))
+            # Side labels
+            for (p1,p2), lbl in zip([((0,0),(Cx,Cy)),((Bx,By),(Cx,Cy)),((0,0),(Bx,By))],
+                                     [f'b={b:.4g}',f'a={a:.4g}',f'c={c:.4g}']):
+                mx,my = (p1[0]+p2[0])/2,(p1[1]+p2[1])/2
+                ax.annotate(lbl,(mx,my),fontsize=8,color='#a3be8c',
+                            textcoords='offset points',xytext=(4,4))
+            ax.set_title("Triangle", color='#eceff4', fontsize=9)
+            self._geo_tri_fig.tight_layout(pad=0.6)
+            self._geo_tri_canvas.draw()
+
+            self._geo_tri_out.setHtml(
+                f"<b>Sides:</b>  a = {a:.6g},  b = {b:.6g},  c = {c:.6g}<br>"
+                f"<b>Angles:</b> A = {A:.4g}°,  B = {B:.4g}°,  C = {C:.4g}°<br>"
+                f"<b>Area</b> = {area:.6g} &nbsp;&nbsp; <b>Perimeter</b> = {a+b+c:.6g}<br>"
+                f"<b>Circumradius R</b> = {R:.6g} &nbsp;&nbsp; <b>Inradius r</b> = {r_in:.6g}<br>"
+                f"<b>Height h_a</b> = {h_a:.6g}"
+            )
+            self._add_to_global_history("Geometry·Triangle", "solve",
+                                        f"a={a:.4g},b={b:.4g},c={c:.4g}",
+                                        f"A={A:.3g}°,B={B:.3g}°,C={C:.3g}°,area={area:.4g}")
+        except Exception as e:
+            self._geo_tri_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Conics ───────────────────────────────────────────────────────────────
+
+    def _setup_geo_conics(self):
+        tab = QWidget()
+        self._geo_tabs.addTab(tab, "Conics")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Conic Section")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        g.addWidget(QLabel("Type:"), 0, 0)
+        self._geo_conic_type = QComboBox()
+        self._geo_conic_type.addItems(["Circle", "Ellipse", "Parabola", "Hyperbola"])
+        self._geo_conic_type.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        self._geo_conic_type.currentIndexChanged.connect(self._update_conic_hints)
+        g.addWidget(self._geo_conic_type, 0, 1)
+
+        self._conic_params = {}
+        for row, (lbl, attr, default) in enumerate([
+            ("h  (center x):", "_cp_h", "0"),
+            ("k  (center y):", "_cp_k", "0"),
+            ("a  (semi-major/focal):", "_cp_a", "3"),
+            ("b  (semi-minor):", "_cp_b", "2"),
+        ], start=1):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._geo_field)
+            setattr(self, attr, w)
+            self._conic_params[attr] = (g.itemAtPosition(row,0).widget(), w)
+            g.addWidget(w, row, 1)
+
+        self._conic_hint = QLabel("")
+        self._conic_hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        self._conic_hint.setWordWrap(True)
+        g.addWidget(self._conic_hint, 5, 0, 1, 2)
+
+        plot_btn = QPushButton("Plot Conic")
+        plot_btn.setStyleSheet(self._geo_btn)
+        plot_btn.clicked.connect(self._run_conic)
+        g.addWidget(plot_btn, 6, 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._geo_con_fig = Figure(facecolor='#1e222b')
+        self._geo_con_canvas = FigureCanvas(self._geo_con_fig)
+        rl.addWidget(self._geo_con_canvas, 1)
+        self._geo_output(rl, '_geo_con_out', 120)
+        outer.addWidget(right, 3)
+        self._update_conic_hints()
+
+    def _update_conic_hints(self):
+        t = self._geo_conic_type.currentText()
+        hints = {
+            "Circle":    "Equation: (x-h)²+(y-k)²=a²   (b ignored)",
+            "Ellipse":   "Equation: (x-h)²/a²+(y-k)²/b²=1   (a>b for horizontal)",
+            "Parabola":  "Equation: y-k = (1/4p)(x-h)²   (a=focal length p, b ignored)",
+            "Hyperbola": "Equation: (x-h)²/a²−(y-k)²/b²=1",
+        }
+        self._conic_hint.setText(hints.get(t, ""))
+
+    def _run_conic(self):
+        import math as _m
+        try:
+            t = self._geo_conic_type.currentText()
+            h = float(self._cp_h.text()); k = float(self._cp_k.text())
+            a = float(self._cp_a.text()); b = float(self._cp_b.text())
+
+            self._geo_con_fig.clear()
+            ax = self._geo_con_fig.add_subplot(111)
+            self._geo_axes(ax)
+            ax.axhline(0, color='#4c566a', linewidth=0.6)
+            ax.axvline(0, color='#4c566a', linewidth=0.6)
+
+            info_lines = []
+
+            if t == "Circle":
+                th = np.linspace(0, 2*np.pi, 400)
+                ax.plot(h + a*np.cos(th), k + a*np.sin(th), color='#88c0d0', linewidth=2)
+                ax.plot(h, k, '+', color='#ebcb8b', markersize=10)
+                info_lines = [
+                    f"Circle:  (x−{h})² + (y−{k})² = {a}²",
+                    f"Radius r = {a}",
+                    f"Diameter = {2*a:.6g}",
+                    f"Area = π·r² = {_m.pi*a**2:.6g}",
+                    f"Circumference = 2π·r = {2*_m.pi*a:.6g}",
+                ]
+
+            elif t == "Ellipse":
+                th = np.linspace(0, 2*np.pi, 400)
+                ax.plot(h + a*np.cos(th), k + b*np.sin(th), color='#88c0d0', linewidth=2)
+                ax.plot(h, k, '+', color='#ebcb8b', markersize=10)
+                c_val = _m.sqrt(abs(a**2 - b**2))
+                e = c_val / a if a > 0 else 0
+                area = _m.pi * a * b
+                # Foci
+                if a >= b:
+                    ax.plot([h-c_val, h+c_val], [k, k], 'o', color='#bf616a', markersize=6)
+                else:
+                    ax.plot([h, h], [k-c_val, k+c_val], 'o', color='#bf616a', markersize=6)
+                info_lines = [
+                    f"Ellipse:  (x−{h})²/{a}² + (y−{k})²/{b}² = 1",
+                    f"Semi-major a={a},  semi-minor b={b}",
+                    f"c = √|a²−b²| = {c_val:.6g}",
+                    f"Eccentricity e = {e:.6g}",
+                    f"Area = π·a·b = {area:.6g}",
+                ]
+
+            elif t == "Parabola":
+                p = a  # focal parameter
+                x_vals = np.linspace(h - 4*abs(p), h + 4*abs(p), 400)
+                y_vals = k + (x_vals - h)**2 / (4*p)
+                ax.plot(x_vals, y_vals, color='#88c0d0', linewidth=2)
+                focus_y = k + p
+                directrix_y = k - p
+                ax.plot(h, focus_y, 'o', color='#bf616a', markersize=7, label=f'Focus ({h:.4g}, {focus_y:.4g})')
+                ax.axhline(directrix_y, color='#ebcb8b', linestyle='--', linewidth=1,
+                           label=f'Directrix y={directrix_y:.4g}')
+                ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=8)
+                info_lines = [
+                    f"Parabola: y−{k} = (1/{4*p:.4g})(x−{h})²",
+                    f"Focal length p = {p}",
+                    f"Focus: ({h:.4g}, {focus_y:.4g})",
+                    f"Directrix: y = {directrix_y:.4g}",
+                    f"Vertex: ({h}, {k})",
+                ]
+
+            elif t == "Hyperbola":
+                # Right branch
+                t_vals = np.linspace(-np.pi/2 + 0.05, np.pi/2 - 0.05, 300)
+                ax.plot(h + a/np.cos(t_vals), k + b*np.tan(t_vals), color='#88c0d0', linewidth=2)
+                # Left branch
+                ax.plot(h - a/np.cos(t_vals), k + b*np.tan(t_vals), color='#88c0d0', linewidth=2)
+                c_val = _m.sqrt(a**2 + b**2)
+                e = c_val / a
+                # Foci
+                ax.plot([h-c_val, h+c_val], [k, k], 'o', color='#bf616a', markersize=6)
+                # Asymptotes
+                xl = np.array([h-4*a, h+4*a])
+                ax.plot(xl, k + (b/a)*(xl-h), color='#4c566a', linestyle=':', linewidth=1)
+                ax.plot(xl, k - (b/a)*(xl-h), color='#4c566a', linestyle=':', linewidth=1)
+                info_lines = [
+                    f"Hyperbola: (x−{h})²/{a}² − (y−{k})²/{b}² = 1",
+                    f"c = √(a²+b²) = {c_val:.6g}",
+                    f"Eccentricity e = {e:.6g}",
+                    f"Asymptotes: y−{k} = ±({b}/{a})(x−{h})",
+                    f"Foci: ({h-c_val:.4g},{k}), ({h+c_val:.4g},{k})",
+                ]
+
+            ax.set_title(f"{t}  (h={h}, k={k}, a={a}, b={b})", color='#eceff4', fontsize=9)
+            self._geo_con_fig.tight_layout(pad=0.6)
+            self._geo_con_canvas.draw()
+            self._geo_con_out.setHtml("<br>".join(f"<b>{l.split(':')[0]}:</b>{':'.join(l.split(':')[1:])}" if ':' in l else l for l in info_lines))
+            self._add_to_global_history("Geometry·Conics", t, f"h={h},k={k},a={a},b={b}", info_lines[0])
+
+        except Exception as e:
+            self._geo_con_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── 2D Shapes ────────────────────────────────────────────────────────────
+
+    def _setup_geo_shapes(self):
+        tab = QWidget()
+        self._geo_tabs.addTab(tab, "Shapes")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Shape")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        g.addWidget(QLabel("Shape:"), 0, 0)
+        self._geo_shape_type = QComboBox()
+        self._geo_shape_type.addItems([
+            "Circle", "Rectangle", "Square", "Triangle (equilateral)",
+            "Regular Polygon", "Sector", "Annulus", "Trapezoid",
+        ])
+        self._geo_shape_type.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        g.addWidget(self._geo_shape_type, 0, 1)
+
+        self._shape_params = []
+        for row, (lbl, attr, default) in enumerate([
+            ("p1  (r / width / side):", "_sp1", "4"),
+            ("p2  (height / n-sides):", "_sp2", "3"),
+            ("p3  (angle° / b1):",      "_sp3", "90"),
+            ("p4  (b2 for trapezoid):", "_sp4", "6"),
+        ], start=1):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._geo_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        calc_btn = QPushButton("Calculate & Draw")
+        calc_btn.setStyleSheet(self._geo_btn)
+        calc_btn.clicked.connect(self._run_shape)
+        g.addWidget(calc_btn, 5, 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._geo_shp_fig = Figure(facecolor='#1e222b')
+        self._geo_shp_canvas = FigureCanvas(self._geo_shp_fig)
+        rl.addWidget(self._geo_shp_canvas, 1)
+        self._geo_output(rl, '_geo_shp_out', 130)
+        outer.addWidget(right, 3)
+
+    def _run_shape(self):
+        import math as _m
+        try:
+            t  = self._geo_shape_type.currentText()
+            p1 = float(self._sp1.text())
+            p2 = float(self._sp2.text())
+            p3 = float(self._sp3.text())
+            p4 = float(self._sp4.text())
+
+            self._geo_shp_fig.clear()
+            ax = self._geo_shp_fig.add_subplot(111)
+            self._geo_axes(ax)
+
+            info = {}
+
+            if t == "Circle":
+                r = p1
+                th = np.linspace(0, 2*np.pi, 400)
+                ax.fill(r*np.cos(th), r*np.sin(th), alpha=0.18, color='#88c0d0')
+                ax.plot(r*np.cos(th), r*np.sin(th), color='#88c0d0', linewidth=2)
+                info = {"Radius": r, "Diameter": 2*r,
+                        "Area": _m.pi*r**2, "Circumference": 2*_m.pi*r}
+
+            elif t == "Rectangle":
+                w, h = p1, p2
+                rect = np.array([[0,0],[w,0],[w,h],[0,h],[0,0]])
+                ax.fill(rect[:-1,0], rect[:-1,1], alpha=0.18, color='#88c0d0')
+                ax.plot(rect[:,0], rect[:,1], color='#88c0d0', linewidth=2)
+                diag = _m.sqrt(w**2+h**2)
+                info = {"Width": w, "Height": h, "Area": w*h,
+                        "Perimeter": 2*(w+h), "Diagonal": diag}
+
+            elif t == "Square":
+                s = p1
+                sq = np.array([[0,0],[s,0],[s,s],[0,s],[0,0]])
+                ax.fill(sq[:-1,0], sq[:-1,1], alpha=0.18, color='#88c0d0')
+                ax.plot(sq[:,0], sq[:,1], color='#88c0d0', linewidth=2)
+                info = {"Side": s, "Area": s**2,
+                        "Perimeter": 4*s, "Diagonal": s*_m.sqrt(2)}
+
+            elif t == "Triangle (equilateral)":
+                s = p1
+                h_tri = s * _m.sqrt(3) / 2
+                verts = np.array([[0,0],[s,0],[s/2,h_tri],[0,0]])
+                ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.18, color='#88c0d0')
+                ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
+                info = {"Side": s, "Height": h_tri,
+                        "Area": _m.sqrt(3)/4*s**2, "Perimeter": 3*s,
+                        "Inradius": s/(2*_m.sqrt(3)), "Circumradius": s/_m.sqrt(3)}
+
+            elif t == "Regular Polygon":
+                s = p1; n = int(p2)
+                R = s / (2 * _m.sin(_m.pi/n))
+                angles = np.linspace(0, 2*np.pi, n+1) + _m.pi/2
+                xs_p = R * np.cos(angles); ys_p = R * np.sin(angles)
+                ax.fill(xs_p[:-1], ys_p[:-1], alpha=0.18, color='#88c0d0')
+                ax.plot(xs_p, ys_p, color='#88c0d0', linewidth=2)
+                apothem = R * _m.cos(_m.pi/n)
+                area = 0.5 * n * s * apothem
+                info = {"Sides n": n, "Side length": s,
+                        "Circumradius R": R, "Apothem": apothem,
+                        "Perimeter": n*s, "Area": area,
+                        "Interior angle °": (n-2)*180/n}
+
+            elif t == "Sector":
+                r = p1; angle_deg = p3
+                angle_rad = _m.radians(angle_deg)
+                th = np.linspace(0, angle_rad, 300)
+                xs_s = np.concatenate([[0], r*np.cos(th), [0]])
+                ys_s = np.concatenate([[0], r*np.sin(th), [0]])
+                ax.fill(xs_s, ys_s, alpha=0.18, color='#88c0d0')
+                ax.plot(xs_s, ys_s, color='#88c0d0', linewidth=2)
+                arc_len = r * angle_rad
+                area = 0.5 * r**2 * angle_rad
+                info = {"Radius": r, "Angle °": angle_deg,
+                        "Arc length": arc_len, "Area": area,
+                        "Chord length": 2*r*_m.sin(angle_rad/2)}
+
+            elif t == "Annulus":
+                R_out, R_in = p1, p2
+                th = np.linspace(0, 2*np.pi, 400)
+                ax.fill(R_out*np.cos(th), R_out*np.sin(th), color='#88c0d0', alpha=0.25)
+                ax.fill(R_in*np.cos(th), R_in*np.sin(th), color='#1e222b', alpha=1.0)
+                ax.plot(R_out*np.cos(th), R_out*np.sin(th), color='#88c0d0', linewidth=2)
+                ax.plot(R_in*np.cos(th), R_in*np.sin(th), color='#88c0d0', linewidth=2)
+                info = {"Outer radius": R_out, "Inner radius": R_in,
+                        "Area": _m.pi*(R_out**2-R_in**2),
+                        "Outer circ.": 2*_m.pi*R_out,
+                        "Inner circ.": 2*_m.pi*R_in}
+
+            elif t == "Trapezoid":
+                b1, b2, h = p3, p4, p2
+                offset = (b2 - b1) / 2
+                verts = np.array([[0,0],[b1,0],[b1+offset,h],[-offset,h],[0,0]])
+                ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.18, color='#88c0d0')
+                ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
+                leg1 = _m.sqrt(offset**2 + h**2)
+                leg2 = _m.sqrt(offset**2 + h**2)
+                info = {"Base 1": b1, "Base 2": b2, "Height": h,
+                        "Area": (b1+b2)*h/2,
+                        "Perimeter": b1+b2+leg1+leg2,
+                        "Median": (b1+b2)/2}
+
+            ax.set_title(t, color='#eceff4', fontsize=9)
+            self._geo_shp_fig.tight_layout(pad=0.6)
+            self._geo_shp_canvas.draw()
+
+            html = "".join(f"<b>{k}:</b> {v:.6g}<br>" if isinstance(v, float) else f"<b>{k}:</b> {v}<br>"
+                           for k, v in info.items())
+            self._geo_shp_out.setHtml(html)
+            summary = "  ".join(f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}" for k,v in info.items())
+            self._add_to_global_history("Geometry·Shapes", t, "", summary[:200])
+
+        except Exception as e:
+            self._geo_shp_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Transformations ───────────────────────────────────────────────────────
+
+    def _setup_geo_transforms(self):
+        tab = QWidget()
+        self._geo_tabs.addTab(tab, "Transformations")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        shape_grp = QGroupBox("Shape  (vertices as  x1,y1; x2,y2; …)")
+        sg = QGridLayout(shape_grp)
+        sg.setSpacing(6)
+        self._geo_xf_pts = QTextEdit("0,0; 3,0; 3,2; 0,2")
+        self._geo_xf_pts.setFixedHeight(40)
+        self._geo_xf_pts.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        sg.addWidget(self._geo_xf_pts, 0, 0, 1, 2)
+        # Presets
+        preset_row = QHBoxLayout()
+        for label, pts in [
+            ("Square", "0,0; 1,0; 1,1; 0,1"),
+            ("Triangle", "0,0; 2,0; 1,2"),
+            ("Star", "0,2; 0.6,0.8; 2,0.6; 0.9,-0.2; 1.2,-1.6; 0,-0.6; -1.2,-1.6; -0.9,-0.2; -2,0.6; -0.6,0.8"),
+        ]:
+            btn = QPushButton(label)
+            btn.setStyleSheet(self._geo_btn.replace("min-height: 34px", "min-height: 26px"))
+            btn.clicked.connect(lambda _, p=pts: self._geo_xf_pts.setPlainText(p))
+            preset_row.addWidget(btn)
+        sg.addLayout(preset_row, 1, 0, 1, 2)
+        ll.addWidget(shape_grp)
+
+        xf_grp = QGroupBox("Transformation")
+        xg = QGridLayout(xf_grp)
+        xg.setSpacing(6)
+        xg.addWidget(QLabel("Type:"), 0, 0)
+        self._geo_xf_type = QComboBox()
+        self._geo_xf_type.addItems([
+            "Rotation", "Reflection", "Scaling", "Translation",
+            "Shear", "Custom Matrix",
+        ])
+        self._geo_xf_type.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        xg.addWidget(self._geo_xf_type, 0, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("p1  (angle° / axis / sx / dx / shear):", "_xp1", "45"),
+            ("p2  (sy for scale / dy for translation):", "_xp2", "1"),
+            ("p3  (pivot x  or  0):", "_xp3", "0"),
+            ("p4  (pivot y  or  0):", "_xp4", "0"),
+            ("Matrix row 1  (a,b):", "_xp_m1", "0,-1"),
+            ("Matrix row 2  (c,d):", "_xp_m2", "1,0"),
+        ], start=1):
+            xg.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._geo_field)
+            setattr(self, attr, w)
+            xg.addWidget(w, row, 1)
+
+        apply_btn = QPushButton("Apply Transformation")
+        apply_btn.setStyleSheet(self._geo_btn)
+        apply_btn.clicked.connect(self._run_transform)
+        xg.addWidget(apply_btn, 7, 0, 1, 2)
+        ll.addWidget(xf_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._geo_xf_fig = Figure(facecolor='#1e222b')
+        self._geo_xf_canvas = FigureCanvas(self._geo_xf_fig)
+        rl.addWidget(self._geo_xf_canvas, 1)
+        self._geo_output(rl, '_geo_xf_out', 100)
+        outer.addWidget(right, 3)
+
+    def _parse_pts(self, text):
+        pts = []
+        for seg in text.replace('\n', ';').split(';'):
+            seg = seg.strip()
+            if not seg:
+                continue
+            parts = seg.replace(',', ' ').split()
+            if len(parts) >= 2:
+                pts.append([float(parts[0]), float(parts[1])])
+        return np.array(pts)
+
+    def _run_transform(self):
+        import math as _m
+        try:
+            pts = self._parse_pts(self._geo_xf_pts.toPlainText())
+            if len(pts) < 2:
+                raise ValueError("Need at least 2 vertices.")
+            t  = self._geo_xf_type.currentText()
+            p1 = float(self._xp1.text())
+            p2 = float(self._xp2.text())
+            p3 = float(self._xp3.text())
+            p4 = float(self._xp4.text())
+
+            pivot = np.array([p3, p4])
+            centered = pts - pivot
+
+            if t == "Rotation":
+                theta = _m.radians(p1)
+                M = np.array([[_m.cos(theta), -_m.sin(theta)],
+                               [_m.sin(theta),  _m.cos(theta)]])
+                new_pts = (M @ centered.T).T + pivot
+                desc = f"Rotation {p1}° about ({p3},{p4})"
+
+            elif t == "Reflection":
+                axis = int(p1) % 4  # 0=x-axis,1=y-axis,2=y=x,3=y=-x
+                axes = {0: np.array([[1,0],[0,-1]]),
+                        1: np.array([[-1,0],[0,1]]),
+                        2: np.array([[0,1],[1,0]]),
+                        3: np.array([[0,-1],[-1,0]])}
+                M = axes[axis]
+                new_pts = (M @ centered.T).T + pivot
+                axis_names = {0:"x-axis",1:"y-axis",2:"y=x",3:"y=-x"}
+                desc = f"Reflection about {axis_names[axis]}"
+
+            elif t == "Scaling":
+                sx, sy = p1, p2
+                M = np.array([[sx,0],[0,sy]])
+                new_pts = (M @ centered.T).T + pivot
+                desc = f"Scale sx={sx}, sy={sy} about ({p3},{p4})"
+
+            elif t == "Translation":
+                dx, dy = p1, p2
+                new_pts = pts + np.array([dx, dy])
+                desc = f"Translation dx={dx}, dy={dy}"
+
+            elif t == "Shear":
+                kx = p1  # horizontal shear
+                M = np.array([[1, kx],[0, 1]])
+                new_pts = (M @ centered.T).T + pivot
+                desc = f"Shear kx={kx}"
+
+            elif t == "Custom Matrix":
+                r1 = [float(x) for x in self._xp_m1.text().split(',')]
+                r2 = [float(x) for x in self._xp_m2.text().split(',')]
+                M = np.array([r1, r2])
+                new_pts = (M @ centered.T).T + pivot
+                det = float(np.linalg.det(M))
+                desc = f"Matrix [[{r1[0]},{r1[1]}],[{r2[0]},{r2[1]}]]  det={det:.4g}"
+
+            # Close polygons for drawing
+            def close(p):
+                return np.vstack([p, p[0]])
+
+            self._geo_xf_fig.clear()
+            ax = self._geo_xf_fig.add_subplot(111)
+            self._geo_axes(ax)
+            ax.axhline(0, color='#4c566a', linewidth=0.5)
+            ax.axvline(0, color='#4c566a', linewidth=0.5)
+
+            orig_c = close(pts)
+            new_c  = close(new_pts)
+            ax.fill(orig_c[:,0], orig_c[:,1], alpha=0.15, color='#88c0d0')
+            ax.plot(orig_c[:,0], orig_c[:,1], color='#88c0d0', linewidth=2, label='Original')
+            ax.fill(new_c[:,0], new_c[:,1], alpha=0.15, color='#a3be8c')
+            ax.plot(new_c[:,0], new_c[:,1], color='#a3be8c', linewidth=2, linestyle='--', label='Transformed')
+
+            # Draw arrows for a few corresponding vertices
+            for o, n in zip(pts[:4], new_pts[:4]):
+                ax.annotate("", xy=n, xytext=o,
+                            arrowprops=dict(arrowstyle='->', color='#ebcb8b', lw=1.2))
+
+            ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+            ax.set_title(desc, color='#eceff4', fontsize=9)
+            self._geo_xf_fig.tight_layout(pad=0.6)
+            self._geo_xf_canvas.draw()
+
+            self._geo_xf_out.setHtml(
+                f"<b>{desc}</b><br>"
+                f"Vertices: {len(pts)}  →  " +
+                "  ".join(f"({x:.3g},{y:.3g})" for x,y in new_pts)
+            )
+            self._add_to_global_history("Geometry·Transforms", t,
+                                        f"{len(pts)} pts", desc)
+
+        except Exception as e:
+            self._geo_xf_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
 
     def setup_linear_algebra_tab(self):
         la_widget = QWidget()
@@ -1071,7 +1818,7 @@ class Karhulaattori(QMainWindow):
                 self.current_input = "Error"
                 
         elif action == "equals":
-            if not self.expression and 'x' not in self.current_input:
+            if not self.expression and 'x' not in self.current_input and '(' not in self.current_input:
                 return
             
             full_expr = f"{self.expression} {self.current_input}".strip()
@@ -1247,19 +1994,6 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("Symbolic Solver", action, func_str, label)
 
         try:
-            if action == "solve_ode":
-                try:
-                    ode_eq, x, y = self._parse_ode(func_str)
-                    sol = sympy.dsolve(ode_eq, y(x))
-                    _set("ODE solution", sympy.latex(sol))
-                except Exception as e:
-                    self.sym_output.setHtml(
-                        f"<b>ODE failed:</b> {str(e)}<br>"
-                        f"<i>e.g. y'' + y = 0</i>"
-                    )
-                    self.sym_result_latex.render("")
-                return
-
             if "," in func_str:
                 eqs_strs = func_str.split(",")
                 eqs, syms = [], set()
@@ -2345,6 +3079,830 @@ class Karhulaattori(QMainWindow):
             self.calc_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
             self.calc_result_latex.render("")
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Differential Equations tab
+    # ══════════════════════════════════════════════════════════════════════
+
+    def setup_de_tab(self):
+        w = QWidget()
+        self.tabs.addTab(w, "Diff. Equations")
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        self._de_tabs = QTabWidget()
+        outer.addWidget(self._de_tabs)
+        self._de_field = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        self._de_btn = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+        )
+        self._setup_de_symbolic()
+        self._setup_de_numerical()
+        self._setup_de_phase()
+        self._setup_de_pde()
+
+    # ── helpers ────────────────────────────────────────────────────────────
+
+    def _de_axes(self, ax, equal=False):
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values():
+            sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        if equal:
+            ax.set_aspect('equal', adjustable='datalim')
+
+    def _de_output(self, layout, attr, max_h=80):
+        tb = QTextBrowser()
+        tb.setMaximumHeight(max_h)
+        tb.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        setattr(self, attr, tb)
+        layout.addWidget(tb)
+
+    # ── Symbolic ODE ───────────────────────────────────────────────────────
+
+    def _setup_de_symbolic(self):
+        tab = QWidget()
+        self._de_tabs.addTab(tab, "Symbolic ODE")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("ODE  (y as function of x)")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        hint = QLabel("Use y' and y'' for derivatives.\nExamples:  y'' + y = 0    y' = y    y'' - 3*y' + 2*y = exp(x)")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setWordWrap(True)
+        g.addWidget(hint, 0, 0, 1, 2)
+        g.addWidget(QLabel("ODE:"), 1, 0)
+        self._de_sym_ode = QLineEdit("y'' + y = 0")
+        self._de_sym_ode.setStyleSheet(self._de_field)
+        g.addWidget(self._de_sym_ode, 1, 1)
+
+        ic_hint = QLabel("Initial conditions  (optional, comma-separated):\nExamples:  y(0)=1   y(0)=1, y'(0)=0")
+        ic_hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        ic_hint.setWordWrap(True)
+        g.addWidget(ic_hint, 2, 0, 1, 2)
+        g.addWidget(QLabel("ICs:"), 3, 0)
+        self._de_sym_ics = QLineEdit("y(0)=1, y'(0)=0")
+        self._de_sym_ics.setStyleSheet(self._de_field)
+        g.addWidget(self._de_sym_ics, 3, 1)
+
+        for lbl, act in [("Solve (general)", "general"), ("Solve with ICs", "particular")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_de_symbolic(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+
+        presets = [
+            ("Harmonic", "y'' + y = 0", "y(0)=1, y'(0)=0"),
+            ("Damped",   "y'' + 0.5*y' + y = 0", "y(0)=2, y'(0)=0"),
+            ("Forced",   "y'' + y = sin(x)", "y(0)=0, y'(0)=0"),
+            ("Logistic", "y' = y*(1-y)", "y(0)=0.1"),
+            ("Bessel",   "x**2*y'' + x*y' + (x**2-1)*y = 0", ""),
+            ("Euler",    "x**2*y'' - 2*x*y' + 2*y = 0", "y(1)=1, y'(1)=0"),
+        ]
+        preset_row = QGridLayout()
+        for idx, (lbl, ode, ics) in enumerate(presets):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.clicked.connect(lambda _, o=ode, i=ics: (
+                self._de_sym_ode.setText(o), self._de_sym_ics.setText(i)))
+            preset_row.addWidget(btn, idx//3, idx%3)
+        g.addLayout(preset_row, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._de_sym_latex = LatexCanvas(height=120)
+        rl.addWidget(self._de_sym_latex)
+        rl.addWidget(self._copy_latex_btn(self._de_sym_latex),
+                     alignment=Qt.AlignmentFlag.AlignRight)
+        self._de_sym_fig = Figure(facecolor='#1e222b')
+        self._de_sym_canvas = FigureCanvas(self._de_sym_fig)
+        rl.addWidget(self._de_sym_canvas, 1)
+        self._de_output(rl, '_de_sym_out', 60)
+        outer.addWidget(right, 3)
+
+    def _run_de_symbolic(self, mode):
+        try:
+            x = sympy.Symbol('x')
+            y = sympy.Function('y')
+            ode_eq, x_s, y_f = self._parse_ode(self._de_sym_ode.text())
+
+            if mode == "general":
+                sol = sympy.dsolve(ode_eq, y_f(x_s))
+                self._de_sym_latex.render(sympy.latex(sol))
+                self._de_sym_out.setHtml("<b>General solution</b>")
+                self._add_to_global_history("DE·Symbolic", "general",
+                                            self._de_sym_ode.text(), str(sol)[:120])
+                self._plot_de_sym_sol(sol, x_s)
+            else:
+                ics = self._parse_de_ics(self._de_sym_ics.text(), x_s, y_f)
+                sol = sympy.dsolve(ode_eq, y_f(x_s), ics=ics if ics else None)
+                self._de_sym_latex.render(sympy.latex(sol))
+                self._de_sym_out.setHtml("<b>Particular solution</b>")
+                self._add_to_global_history("DE·Symbolic", "particular",
+                                            self._de_sym_ode.text(), str(sol)[:120])
+                self._plot_de_sym_sol(sol, x_s)
+        except Exception as e:
+            self._de_sym_latex.render(r"\text{Error: }" + str(e)[:50])
+            self._de_sym_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    def _parse_de_ics(self, text, x_sym, y_func):
+        """Parse 'y(0)=1, y'(0)=0' → dict for dsolve ics kwarg."""
+        if not text.strip():
+            return {}
+        import re
+        ics = {}
+        x = x_sym; y = y_func
+        for part in text.split(','):
+            part = part.strip()
+            if not part:
+                continue
+            m = re.match(r"y'?\(([^)]+)\)\s*=\s*(.+)", part)
+            if not m:
+                continue
+            x_val = float(sympy.sympify(m.group(1)).evalf())
+            rhs   = sympy.sympify(m.group(2))
+            if "'" in part:
+                ics[y(x).diff(x).subs(x, x_val)] = rhs
+            else:
+                ics[y(x_sym).subs(x_sym, x_val)] = rhs
+        return ics
+
+    def _plot_de_sym_sol(self, sol, x_sym):
+        try:
+            rhs = sol.rhs if hasattr(sol, 'rhs') else sol
+            # Replace any free constants with numeric guesses for plotting
+            free = rhs.free_symbols - {x_sym}
+            sub = {s: 1 for s in free}
+            rhs_num = rhs.subs(sub)
+            f = sympy.lambdify(x_sym, rhs_num, 'numpy')
+            xs = np.linspace(-2*np.pi, 2*np.pi, 600)
+            with np.errstate(all='ignore'):
+                ys = np.asarray(f(xs), dtype=complex).real
+            ys[~np.isfinite(ys)] = np.nan
+            if np.all(np.isnan(ys)):
+                return
+            self._de_sym_fig.clear()
+            ax = self._de_sym_fig.add_subplot(111)
+            self._de_axes(ax)
+            ax.plot(xs, ys, color='#88c0d0', linewidth=2)
+            ax.axhline(0, color='#4c566a', linewidth=0.6)
+            ax.set_title("Solution  y(x)", color='#eceff4', fontsize=9)
+            self._de_sym_fig.tight_layout(pad=0.6)
+            self._de_sym_canvas.draw()
+        except Exception:
+            pass
+
+    # ── Numerical IVP ─────────────────────────────────────────────────────
+
+    def _setup_de_numerical(self):
+        tab = QWidget()
+        self._de_tabs.addTab(tab, "Numerical IVP")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("First-order system  dy/dt = f(t, y)")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        hint = QLabel(
+            "Single ODE:  f(t, y) = -y + sin(t)\n"
+            "System (comma-sep):  -y[1], y[0]   (SHO: dx/dt=v, dv/dt=-x)\n"
+            "Use t and y (scalar) or y[0], y[1], … (vector)"
+        )
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setWordWrap(True)
+        g.addWidget(hint, 0, 0, 1, 2)
+
+        g.addWidget(QLabel("f(t,y) ="), 1, 0)
+        self._de_num_f = QLineEdit("-y + sin(t)")
+        self._de_num_f.setStyleSheet(self._de_field)
+        g.addWidget(self._de_num_f, 1, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("y₀  (comma-sep for system):", "_de_num_y0",  "1"),
+            ("t₀ =", "_de_num_t0", "0"),
+            ("t_end =", "_de_num_tf", "10"),
+            ("Step h =",  "_de_num_h",  "0.1"),
+        ], start=2):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._de_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        for lbl, act in [
+            ("Euler",       "euler"),
+            ("Heun (RK2)",  "heun"),
+            ("RK4",         "rk4"),
+            ("RK45 (scipy)","rk45"),
+            ("DOP853",      "dop853"),
+            ("Radau (stiff)","radau"),
+            ("BDF (stiff)", "bdf"),
+            ("Compare Euler/RK4/RK45", "compare"),
+        ]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_de_numerical(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+
+        preset_row = QGridLayout()
+        presets_num = [
+            ("Decay",     "-0.5*y",       "2",    "0", "10", "0.2"),
+            ("SHO",       "-y[1], y[0]",  "0,1",  "0", "20", "0.1"),
+            ("Van der Pol","y[1], (1-y[0]**2)*y[1]-y[0]","0,2","0","30","0.05"),
+            ("Lorenz x",  "y[1], -y[0]+y[1]*(1-y[0]**2)","1,0","0","40","0.02"),
+        ]
+        for idx, (lbl, f, y0, t0, tf, h) in enumerate(presets_num):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.clicked.connect(lambda _, fv=f, y0v=y0, t0v=t0, tfv=tf, hv=h: (
+                self._de_num_f.setText(fv), self._de_num_y0.setText(y0v),
+                self._de_num_t0.setText(t0v), self._de_num_tf.setText(tfv),
+                self._de_num_h.setText(hv)))
+            preset_row.addWidget(btn, idx//2, idx%2)
+        g.addLayout(preset_row, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._de_num_fig = Figure(facecolor='#1e222b')
+        self._de_num_canvas = FigureCanvas(self._de_num_fig)
+        rl.addWidget(self._de_num_canvas, 1)
+        self._de_output(rl, '_de_num_out', 80)
+        outer.addWidget(right, 3)
+
+    def _de_parse_rhs(self, expr_str, t_val, y_arr):
+        """Evaluate f(t, y) string; supports scalar y or y[i] indexing."""
+        import re
+        s = expr_str.strip()
+        # Build namespace
+        ns = {
+            't': t_val, 'y': y_arr[0] if len(y_arr)==1 else y_arr,
+            **{f: getattr(np, f) for f in dir(np) if not f.startswith('_')},
+            'pi': np.pi, 'e': np.e,
+        }
+        if ',' in s:
+            parts = s.split(',')
+            return np.array([float(eval(p.strip(), ns)) for p in parts])
+        return np.array([float(eval(s, ns))])
+
+    def _run_de_numerical(self, method):
+        from scipy.integrate import solve_ivp
+        try:
+            f_str = self._de_num_f.text()
+            y0 = np.array([float(v) for v in self._de_num_y0.text().split(',')])
+            t0 = float(self._de_num_t0.text())
+            tf = float(self._de_num_tf.text())
+            h  = float(self._de_num_h.text())
+
+            def f_vec(t, y):
+                return self._de_parse_rhs(f_str, t, np.asarray(y))
+
+            scipy_methods = {
+                'rk45': 'RK45', 'dop853': 'DOP853',
+                'radau': 'Radau', 'bdf': 'BDF',
+            }
+
+            results = {}
+
+            def _manual(stepper, name):
+                ts = [t0]; ys = [y0.copy()]
+                t_cur = t0; y_cur = y0.copy()
+                while t_cur < tf - 1e-12:
+                    h_actual = min(h, tf - t_cur)
+                    y_cur = stepper(f_vec, t_cur, y_cur, h_actual)
+                    t_cur += h_actual
+                    ts.append(t_cur); ys.append(y_cur.copy())
+                return np.array(ts), np.array(ys)
+
+            def _euler_step(f, t, y, h):
+                return y + h * f(t, y)
+
+            def _heun_step(f, t, y, h):
+                k1 = f(t, y)
+                k2 = f(t + h, y + h*k1)
+                return y + h/2 * (k1 + k2)
+
+            def _rk4_step(f, t, y, h):
+                k1 = f(t, y)
+                k2 = f(t + h/2, y + h/2*k1)
+                k3 = f(t + h/2, y + h/2*k2)
+                k4 = f(t + h,   y + h*k3)
+                return y + h/6 * (k1 + 2*k2 + 2*k3 + k4)
+
+            if method == "compare":
+                for name, stepper in [("Euler",_euler_step),("RK4",_rk4_step)]:
+                    results[name] = _manual(stepper, name)
+                sol = solve_ivp(f_vec, [t0, tf], y0, method='RK45',
+                                max_step=h, dense_output=False)
+                results["RK45"] = (sol.t, sol.y.T)
+            elif method in scipy_methods:
+                sol = solve_ivp(f_vec, [t0, tf], y0,
+                                method=scipy_methods[method],
+                                max_step=h, dense_output=False)
+                results[method.upper()] = (sol.t, sol.y.T)
+            elif method == "euler":
+                results["Euler"] = _manual(_euler_step, "Euler")
+            elif method == "heun":
+                results["Heun"] = _manual(_heun_step, "Heun")
+            elif method == "rk4":
+                results["RK4"] = _manual(_rk4_step, "RK4")
+
+            # Plot
+            self._de_num_fig.clear()
+            n_comp = len(y0)
+            n_axes = n_comp + (1 if n_comp == 2 else 0)  # + phase plane if 2D
+            axes = self._de_num_fig.subplots(1, n_axes) if n_axes > 1 else [self._de_num_fig.add_subplot(111)]
+            if n_axes == 1:
+                axes = [axes[0]]
+
+            colors = ['#88c0d0','#a3be8c','#ebcb8b','#bf616a']
+            comp_labels = [f"y[{i}]" if n_comp > 1 else "y" for i in range(n_comp)]
+
+            for ax in axes[:n_comp]:
+                self._de_axes(ax)
+            if n_comp == 2:
+                self._de_axes(axes[2], equal=False)
+
+            for cidx, (name, (ts, ys)) in enumerate(results.items()):
+                col = colors[cidx % len(colors)]
+                for comp in range(n_comp):
+                    y_plot = ys[:, comp] if ys.ndim > 1 else ys
+                    axes[comp].plot(ts, y_plot, color=col, linewidth=1.8,
+                                    label=f"{name} {comp_labels[comp]}", alpha=0.9)
+                if n_comp == 2 and len(results) == 1:
+                    y0p = ys[:, 0]; y1p = ys[:, 1]
+                    axes[2].plot(y0p, y1p, color='#a3be8c', linewidth=1.5, alpha=0.8)
+                    axes[2].set_title("Phase plane", color='#eceff4', fontsize=8)
+                    axes[2].set_xlabel(comp_labels[0], color='#81a1c1', fontsize=7)
+                    axes[2].set_ylabel(comp_labels[1], color='#81a1c1', fontsize=7)
+
+            for i, ax in enumerate(axes[:n_comp]):
+                ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=7)
+                ax.set_title(comp_labels[i], color='#eceff4', fontsize=8)
+                ax.set_xlabel("t", color='#81a1c1', fontsize=7)
+
+            self._de_num_fig.tight_layout(pad=0.6)
+            self._de_num_canvas.draw()
+
+            first_name, (ts, ys) = list(results.items())[0]
+            y_end = ys[-1] if ys.ndim == 1 else ys[-1]
+            self._de_num_out.setHtml(
+                f"<b>Method:</b> {first_name}  "
+                f"<b>Steps:</b> {len(ts)-1}<br>"
+                f"<b>y(t={ts[-1]:.4g})</b> = {np.round(y_end,6)}"
+            )
+            self._add_to_global_history("DE·Numerical", method, f_str,
+                                        f"t_end={tf}, steps={len(ts)-1}")
+        except Exception as e:
+            self._de_num_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Phase Portrait ─────────────────────────────────────────────────────
+
+    def _setup_de_phase(self):
+        tab = QWidget()
+        self._de_tabs.addTab(tab, "Phase Portrait")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Autonomous 2D system")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        hint = QLabel("dx/dt = f(x,y)    dy/dt = g(x,y)\nUse x and y as variables.")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        g.addWidget(hint, 0, 0, 1, 2)
+
+        g.addWidget(QLabel("f(x,y) ="), 1, 0)
+        self._de_ph_f = QLineEdit("y")
+        self._de_ph_f.setStyleSheet(self._de_field)
+        g.addWidget(self._de_ph_f, 1, 1)
+
+        g.addWidget(QLabel("g(x,y) ="), 2, 0)
+        self._de_ph_g = QLineEdit("-x - 0.3*y")
+        self._de_ph_g.setStyleSheet(self._de_field)
+        g.addWidget(self._de_ph_g, 2, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("x min:", "_de_ph_xmin", "-4"),
+            ("x max:", "_de_ph_xmax", "4"),
+            ("y min:", "_de_ph_ymin", "-4"),
+            ("y max:", "_de_ph_ymax", "4"),
+            ("Trajectories n:", "_de_ph_n", "12"),
+            ("t span:", "_de_ph_tf", "20"),
+        ], start=3):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setFixedWidth(70)
+            w.setStyleSheet(self._de_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        presets_ph = [
+            ("Damped SHO",  "y", "-x-0.3*y", "-4","4","-4","4"),
+            ("Centre",      "y", "-x",        "-3","3","-3","3"),
+            ("Saddle",      "x", "-y",         "-3","3","-3","3"),
+            ("Van der Pol", "y", "(1-x**2)*y-x","-4","4","-4","4"),
+            ("Pendulum",    "y", "-sin(x)",    "-7","7","-4","4"),
+            ("Lotka-Volterra","0.5*x-0.1*x*y", "-0.5*y+0.1*x*y", "0","10","0","10"),
+        ]
+        pg = QGridLayout()
+        for idx, (lbl, f, g_str, x1,x2,y1,y2) in enumerate(presets_ph):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.clicked.connect(lambda _, fv=f, gv=g_str, x1v=x1,x2v=x2,y1v=y1,y2v=y2: (
+                self._de_ph_f.setText(fv), self._de_ph_g.setText(gv),
+                self._de_ph_xmin.setText(x1v), self._de_ph_xmax.setText(x2v),
+                self._de_ph_ymin.setText(y1v), self._de_ph_ymax.setText(y2v)))
+            pg.addWidget(btn, idx//3, idx%3)
+        g.addLayout(pg, g.rowCount(), 0, 1, 2)
+
+        for lbl, act in [("Vector Field + Trajectories", "full"),
+                          ("Streamlines", "stream"),
+                          ("Find Equilibria", "equil")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_de_phase(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._de_ph_fig = Figure(facecolor='#1e222b')
+        self._de_ph_canvas = FigureCanvas(self._de_ph_fig)
+        rl.addWidget(self._de_ph_canvas, 1)
+        self._de_output(rl, '_de_ph_out', 90)
+        outer.addWidget(right, 3)
+
+    def _de_eval_field(self, expr_str, X, Y):
+        ns = {
+            'x': X, 'y': Y,
+            **{f: getattr(np, f) for f in dir(np) if not f.startswith('_')},
+            'pi': np.pi, 'e': np.e,
+        }
+        return np.asarray(eval(expr_str.strip(), ns), dtype=float)
+
+    def _run_de_phase(self, mode):
+        from scipy.integrate import solve_ivp
+        try:
+            f_str = self._de_ph_f.text()
+            g_str = self._de_ph_g.text()
+            xmin = float(self._de_ph_xmin.text()); xmax = float(self._de_ph_xmax.text())
+            ymin = float(self._de_ph_ymin.text()); ymax = float(self._de_ph_ymax.text())
+            n_traj = int(self._de_ph_n.text())
+            tf = float(self._de_ph_tf.text())
+
+            xs = np.linspace(xmin, xmax, 22)
+            ys = np.linspace(ymin, ymax, 22)
+            X, Y = np.meshgrid(xs, ys)
+
+            with np.errstate(all='ignore'):
+                U = self._de_eval_field(f_str, X, Y)
+                V = self._de_eval_field(g_str, X, Y)
+            U[~np.isfinite(U)] = 0; V[~np.isfinite(V)] = 0
+
+            self._de_ph_fig.clear()
+            ax = self._de_ph_fig.add_subplot(111)
+            self._de_axes(ax)
+            ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax)
+            ax.set_xlabel("x", color='#81a1c1', fontsize=8)
+            ax.set_ylabel("y", color='#81a1c1', fontsize=8)
+
+            if mode in ("full", "equil"):
+                norm = np.sqrt(U**2 + V**2)
+                norm[norm == 0] = 1
+                ax.quiver(X, Y, U/norm, V/norm, norm,
+                          cmap='cool', alpha=0.55, scale=28,
+                          width=0.004, headwidth=4)
+
+            if mode == "stream":
+                speed = np.sqrt(U**2 + V**2)
+                ax.streamplot(xs, ys, U, V,
+                              color=speed, cmap='cool',
+                              linewidth=1.2, density=1.4, arrowsize=1.4)
+
+            if mode in ("full", "equil"):
+                # Trajectories from grid of initial conditions
+                ic_x = np.linspace(xmin, xmax, int(np.sqrt(n_traj))+1)
+                ic_y = np.linspace(ymin, ymax, int(np.sqrt(n_traj))+1)
+                def rhs(t, state):
+                    xx, yy = state
+                    with np.errstate(all='ignore'):
+                        u = float(self._de_eval_field(f_str, np.array([[xx]]), np.array([[yy]]))[0,0])
+                        v = float(self._de_eval_field(g_str, np.array([[xx]]), np.array([[yy]]))[0,0])
+                    return [u, v]
+                for x0 in ic_x:
+                    for y0 in ic_y:
+                        try:
+                            sol = solve_ivp(rhs, [0, tf], [x0, y0],
+                                            method='RK45', max_step=0.1,
+                                            dense_output=False,
+                                            events=lambda t,s: max(abs(s[0])-xmax*3, abs(s[1])-ymax*3))
+                            xt, yt = sol.y
+                            mask = (xt >= xmin) & (xt <= xmax) & (yt >= ymin) & (yt <= ymax)
+                            if mask.sum() > 2:
+                                ax.plot(xt[mask], yt[mask], color='#a3be8c',
+                                        linewidth=0.8, alpha=0.55)
+                        except Exception:
+                            pass
+
+            if mode == "equil":
+                # Find equilibria numerically on a grid
+                from scipy.optimize import fsolve
+                equil = []
+                for x0 in np.linspace(xmin, xmax, 6):
+                    for y0 in np.linspace(ymin, ymax, 6):
+                        try:
+                            def sys_eq(pt):
+                                xx, yy = pt
+                                u = float(self._de_eval_field(f_str, np.array([[xx]]), np.array([[yy]]))[0,0])
+                                v = float(self._de_eval_field(g_str, np.array([[xx]]), np.array([[yy]]))[0,0])
+                                return [u, v]
+                            pt = fsolve(sys_eq, [x0, y0], full_output=False)
+                            res = sys_eq(pt)
+                            if abs(res[0]) < 1e-6 and abs(res[1]) < 1e-6:
+                                # deduplicate
+                                if not any(np.linalg.norm(np.array(pt)-np.array(e)) < 1e-4 for e in equil):
+                                    equil.append(pt.tolist())
+                        except Exception:
+                            pass
+                equil_html = ""
+                for pt in equil:
+                    ax.plot(pt[0], pt[1], 'o', color='#bf616a', markersize=8, zorder=5)
+                    equil_html += f"({pt[0]:.4g}, {pt[1]:.4g})  "
+                self._de_ph_out.setHtml(
+                    f"<b>Equilibria found ({len(equil)}):</b> {equil_html}"
+                )
+            else:
+                self._de_ph_out.setHtml(
+                    f"<b>dx/dt = {f_str}</b><br>"
+                    f"<b>dy/dt = {g_str}</b>"
+                )
+
+            ax.set_title(f"Phase portrait", color='#eceff4', fontsize=9)
+            self._de_ph_fig.tight_layout(pad=0.4)
+            self._de_ph_canvas.draw()
+            self._add_to_global_history("DE·Phase", mode, f"{f_str}, {g_str}", "")
+        except Exception as e:
+            self._de_ph_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── PDE ───────────────────────────────────────────────────────────────
+
+    def _setup_de_pde(self):
+        tab = QWidget()
+        self._de_tabs.addTab(tab, "PDE")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("PDE  (finite difference)")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+
+        g.addWidget(QLabel("Type:"), 0, 0)
+        self._de_pde_type = QComboBox()
+        self._de_pde_type.addItems([
+            "Heat  uₜ = α·uₓₓ",
+            "Wave  uₜₜ = c²·uₓₓ",
+            "Laplace  uₓₓ + uyy = 0",
+        ])
+        self._de_pde_type.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        g.addWidget(self._de_pde_type, 0, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("α or c  (param):", "_de_pde_alpha", "0.5"),
+            ("L  (domain [0,L]):", "_de_pde_L", "1.0"),
+            ("T  (time span):", "_de_pde_T", "1.0"),
+            ("Nx  (space steps):", "_de_pde_Nx", "50"),
+            ("Nt  (time steps):", "_de_pde_Nt", "500"),
+        ], start=1):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._de_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        g.addWidget(QLabel("Initial cond. u(x,0) ="), 6, 0)
+        self._de_pde_ic = QLineEdit("sin(pi*x/L)")
+        self._de_pde_ic.setStyleSheet(self._de_field)
+        g.addWidget(self._de_pde_ic, 6, 1)
+
+        g.addWidget(QLabel("Snapshots at t ="), 7, 0)
+        self._de_pde_snaps = QLineEdit("0, 0.1, 0.3, 0.6, 1.0")
+        self._de_pde_snaps.setStyleSheet(self._de_field)
+        g.addWidget(self._de_pde_snaps, 7, 1)
+
+        presets_pde = [
+            ("Heat sin", "Heat  uₜ = α·uₓₓ", "0.5","1","1","50","500","sin(pi*x/L)","0,0.05,0.2,0.5,1.0"),
+            ("Heat pulse","Heat  uₜ = α·uₓₓ","0.1","1","0.5","60","600","exp(-50*(x-0.5)**2)","0,0.02,0.1,0.3,0.5"),
+            ("Wave",     "Wave  uₜₜ = c²·uₓₓ","1","1","2","60","600","sin(pi*x/L)","0,0.25,0.5,0.75,1.0"),
+            ("Laplace",  "Laplace  uₓₓ + uyy = 0","","1","","30","","sin(pi*x/L)",""),
+        ]
+        pg = QGridLayout()
+        for idx, (lbl, ptype, alpha, L, T, Nx, Nt, ic, snaps) in enumerate(presets_pde):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            def _load(pt=ptype, a=alpha, lv=L, tv=T, nx=Nx, nt=Nt, icv=ic, sv=snaps):
+                self._de_pde_type.setCurrentText(pt)
+                if a: self._de_pde_alpha.setText(a)
+                if lv: self._de_pde_L.setText(lv)
+                if tv: self._de_pde_T.setText(tv)
+                if nx: self._de_pde_Nx.setText(nx)
+                if nt: self._de_pde_Nt.setText(nt)
+                if icv: self._de_pde_ic.setText(icv)
+                if sv: self._de_pde_snaps.setText(sv)
+            btn.clicked.connect(_load)
+            pg.addWidget(btn, idx//2, idx%2)
+        g.addLayout(pg, g.rowCount(), 0, 1, 2)
+
+        solve_btn = QPushButton("Solve PDE")
+        solve_btn.setStyleSheet(self._de_btn)
+        solve_btn.clicked.connect(self._run_de_pde)
+        g.addWidget(solve_btn, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._de_pde_fig = Figure(facecolor='#1e222b')
+        self._de_pde_canvas = FigureCanvas(self._de_pde_fig)
+        rl.addWidget(self._de_pde_canvas, 1)
+        self._de_output(rl, '_de_pde_out', 70)
+        outer.addWidget(right, 3)
+
+    def _run_de_pde(self):
+        try:
+            ptype = self._de_pde_type.currentText()
+            alpha = float(self._de_pde_alpha.text()) if self._de_pde_alpha.text() else 1.0
+            L     = float(self._de_pde_L.text())
+            Nx    = int(self._de_pde_Nx.text())
+            ic_str= self._de_pde_ic.text()
+
+            xs = np.linspace(0, L, Nx+1)
+            dx = L / Nx
+
+            ns = {'x': xs, 'L': L, 'pi': np.pi,
+                  **{f: getattr(np, f) for f in dir(np) if not f.startswith('_')}}
+            u0 = np.asarray(eval(ic_str, ns), dtype=float)
+            if u0.shape != xs.shape:
+                u0 = np.broadcast_to(u0, xs.shape).copy()
+
+            snaps_t = [float(v.strip()) for v in self._de_pde_snaps.text().split(',') if v.strip()]
+
+            self._de_pde_fig.clear()
+
+            if "Heat" in ptype:
+                Nt = int(self._de_pde_Nt.text())
+                T  = float(self._de_pde_T.text())
+                dt = T / Nt
+                r  = alpha * dt / dx**2
+                if r > 0.5:
+                    self._de_pde_out.setHtml(
+                        f"<b style='color:#ebcb8b'>Warning:</b> r={r:.3f} > 0.5 — "
+                        "unstable (reduce dt or increase Nx)"
+                    )
+                u = u0.copy()
+                snapshots = {0.0: u0.copy()}
+                t_cur = 0.0
+                for _ in range(Nt):
+                    u_new = u.copy()
+                    u_new[1:-1] = u[1:-1] + r*(u[2:] - 2*u[1:-1] + u[:-2])
+                    u_new[0] = u_new[-1] = 0  # Dirichlet BC
+                    u = u_new
+                    t_cur += dt
+                    for ts in snaps_t:
+                        if abs(t_cur - ts) < dt/2 and ts not in snapshots:
+                            snapshots[ts] = u.copy()
+
+                ax = self._de_pde_fig.add_subplot(111)
+                self._de_axes(ax)
+                cmap = matplotlib.cm.get_cmap('cool')
+                times_sorted = sorted(snapshots.keys())
+                for i, t_s in enumerate(times_sorted):
+                    color = cmap(i / max(len(times_sorted)-1, 1))
+                    ax.plot(xs, snapshots[t_s], color=color, linewidth=1.8,
+                            label=f"t={t_s:.3g}")
+                ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=8)
+                ax.set_title(f"Heat equation  α={alpha}  (FTCS)", color='#eceff4', fontsize=9)
+                ax.set_xlabel("x", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("u(x,t)", color='#81a1c1', fontsize=8)
+                self._de_pde_out.setHtml(f"<b>r = αΔt/Δx² = {r:.4g}</b>  "
+                                          f"({'stable' if r<=0.5 else 'UNSTABLE'})")
+
+            elif "Wave" in ptype:
+                c  = alpha
+                Nt = int(self._de_pde_Nt.text())
+                T  = float(self._de_pde_T.text())
+                dt = T / Nt
+                r  = c * dt / dx
+                u_prev = u0.copy()
+                # First step: u(t=dt) using zero initial velocity
+                u_cur = u_prev.copy()
+                u_cur[1:-1] = (u_prev[1:-1]
+                               + 0.5*r**2*(u_prev[2:]-2*u_prev[1:-1]+u_prev[:-2]))
+                u_cur[0] = u_cur[-1] = 0
+                snapshots = {0.0: u0.copy()}
+                t_cur = dt
+                for _ in range(Nt-1):
+                    u_new = np.empty_like(u_cur)
+                    u_new[1:-1] = (2*u_cur[1:-1] - u_prev[1:-1]
+                                   + r**2*(u_cur[2:]-2*u_cur[1:-1]+u_cur[:-2]))
+                    u_new[0] = u_new[-1] = 0
+                    u_prev = u_cur; u_cur = u_new
+                    t_cur += dt
+                    for ts in snaps_t:
+                        if abs(t_cur - ts) < dt*1.5 and ts not in snapshots:
+                            snapshots[ts] = u_cur.copy()
+
+                ax = self._de_pde_fig.add_subplot(111)
+                self._de_axes(ax)
+                cmap = matplotlib.cm.get_cmap('cool')
+                times_sorted = sorted(snapshots.keys())
+                for i, t_s in enumerate(times_sorted):
+                    color = cmap(i / max(len(times_sorted)-1, 1))
+                    ax.plot(xs, snapshots[t_s], color=color, linewidth=1.8,
+                            label=f"t={t_s:.3g}")
+                ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=8)
+                ax.set_title(f"Wave equation  c={c}  (CFL={r:.3g})", color='#eceff4', fontsize=9)
+                ax.set_xlabel("x", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("u(x,t)", color='#81a1c1', fontsize=8)
+                self._de_pde_out.setHtml(f"<b>CFL = cΔt/Δx = {r:.4g}</b>  "
+                                          f"({'stable' if r<=1 else 'UNSTABLE'})")
+
+            elif "Laplace" in ptype:
+                # 2D Laplace on [0,L]×[0,L] with u=sin(πx/L) on top, 0 elsewhere
+                N = Nx
+                u_lap = np.zeros((N+1, N+1))
+                # Boundary: top edge u(x,L) = sin(πx/L)
+                u_lap[-1, :] = np.sin(np.pi * xs / L)
+                # Gauss-Seidel iteration
+                for _ in range(2000):
+                    u_old = u_lap.copy()
+                    u_lap[1:-1, 1:-1] = 0.25*(
+                        u_lap[2:,1:-1] + u_lap[:-2,1:-1] +
+                        u_lap[1:-1,2:] + u_lap[1:-1,:-2])
+                    if np.max(np.abs(u_lap - u_old)) < 1e-5:
+                        break
+
+                ax = self._de_pde_fig.add_subplot(111)
+                ax.set_facecolor('#1e222b')
+                im = ax.contourf(xs, xs, u_lap, levels=30, cmap='coolwarm')
+                self._de_pde_fig.colorbar(im, ax=ax)
+                ax.contour(xs, xs, u_lap, levels=10, colors='white', linewidths=0.4, alpha=0.5)
+                ax.set_title("Laplace equation  (Gauss-Seidel)", color='#eceff4', fontsize=9)
+                ax.set_xlabel("x", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("y", color='#81a1c1', fontsize=8)
+                ax.tick_params(colors='#eceff4', labelsize=8)
+                self._de_pde_out.setHtml("<b>Boundary:</b> u=sin(πx/L) on top, 0 elsewhere")
+
+            self._de_pde_fig.tight_layout(pad=0.5)
+            self._de_pde_canvas.draw()
+            self._add_to_global_history("DE·PDE", ptype.split()[0], ic_str, "solved")
+
+        except Exception as e:
+            self._de_pde_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
 
     def setup_statistics_tab(self):
         stat_widget = QWidget()
@@ -4190,6 +5748,1350 @@ class Karhulaattori(QMainWindow):
         item = QListWidgetItem(text)
         item.setData(Qt.ItemDataRole.UserRole, entry)
         return item
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Numerical Methods tab
+    # ══════════════════════════════════════════════════════════════════════
+
+    def setup_numerical_tab(self):
+        w = QWidget()
+        self.tabs.addTab(w, "Numerical")
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        self._nm_tabs = QTabWidget()
+        outer.addWidget(self._nm_tabs)
+        _f = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        _b = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+        )
+        self._nm_field = _f
+        self._nm_btn   = _b
+        self._setup_nm_roots()
+        self._setup_nm_integration()
+        self._setup_nm_interpolation()
+        self._setup_nm_fitting()
+
+    # ── helpers ────────────────────────────────────────────────────────────
+
+    def _nm_axes(self, ax):
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values():
+            sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+
+    def _nm_output(self, parent_layout, attr_name, max_h=100):
+        tb = QTextBrowser()
+        tb.setMaximumHeight(max_h)
+        tb.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        setattr(self, attr_name, tb)
+        parent_layout.addWidget(tb)
+
+    # ── Root Finding ───────────────────────────────────────────────────────
+
+    def _setup_nm_roots(self):
+        tab = QWidget()
+        self._nm_tabs.addTab(tab, "Root Finding")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("f(x) = 0")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        g.addWidget(QLabel("f(x) ="), 0, 0)
+        self.nm_rf_f = QLineEdit("x**3 - x - 2")
+        self.nm_rf_f.setStyleSheet(self._nm_field)
+        g.addWidget(self.nm_rf_f, 0, 1)
+
+        params = [
+            ("a  (left bracket):", "nm_rf_a",  "1"),
+            ("b  (right bracket):", "nm_rf_b", "2"),
+            ("x₀  (initial guess):", "nm_rf_x0","1.5"),
+            ("Tolerance:", "nm_rf_tol",         "1e-9"),
+            ("Max iterations:", "nm_rf_maxiter","100"),
+        ]
+        for row, (lbl, attr, default) in enumerate(params, start=1):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._nm_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        methods = [
+            ("Bisection",     "bisection"),
+            ("Newton-Raphson","newton"),
+            ("Secant",        "secant"),
+            ("Regula Falsi",  "regula"),
+            ("Brent's Method","brent"),
+        ]
+        for lbl, act in methods:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._nm_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_rf(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.nm_rf_fig = Figure(facecolor='#1e222b')
+        self.nm_rf_canvas = FigureCanvas(self.nm_rf_fig)
+        rl.addWidget(self.nm_rf_canvas, 1)
+        self._nm_output(rl, "nm_rf_out", 110)
+        outer.addWidget(right, 3)
+
+    def _run_rf(self, method):
+        try:
+            x_sym = sympy.Symbol('x')
+            f_expr = sympy.sympify(self.nm_rf_f.text())
+            f_num  = sympy.lambdify(x_sym, f_expr, 'numpy')
+            df_expr = sympy.diff(f_expr, x_sym)
+            df_num  = sympy.lambdify(x_sym, df_expr, 'numpy')
+
+            a   = float(sympy.sympify(self.nm_rf_a.text()).evalf())
+            b   = float(sympy.sympify(self.nm_rf_b.text()).evalf())
+            x0  = float(sympy.sympify(self.nm_rf_x0.text()).evalf())
+            tol = float(self.nm_rf_tol.text())
+            maxn= int(self.nm_rf_maxiter.text())
+
+            history = []   # (iteration, x, f(x))
+            root = None
+
+            if method == "bisection":
+                aa, bb = a, b
+                for i in range(maxn):
+                    mid = (aa + bb) / 2
+                    fm  = f_num(mid)
+                    history.append((i+1, mid, fm))
+                    if abs(fm) < tol or (bb - aa)/2 < tol:
+                        root = mid; break
+                    if f_num(aa) * fm < 0:
+                        bb = mid
+                    else:
+                        aa = mid
+                else:
+                    root = mid
+
+            elif method == "newton":
+                xi = x0
+                for i in range(maxn):
+                    fi  = f_num(xi)
+                    dfi = df_num(xi)
+                    if abs(dfi) < 1e-14:
+                        break
+                    xi_new = xi - fi / dfi
+                    history.append((i+1, xi_new, f_num(xi_new)))
+                    if abs(xi_new - xi) < tol:
+                        root = xi_new; break
+                    xi = xi_new
+                else:
+                    root = xi
+
+            elif method == "secant":
+                x_prev, xi = a, x0
+                for i in range(maxn):
+                    fp, fi = f_num(x_prev), f_num(xi)
+                    if abs(fi - fp) < 1e-14:
+                        break
+                    xi_new = xi - fi * (xi - x_prev) / (fi - fp)
+                    history.append((i+1, xi_new, f_num(xi_new)))
+                    if abs(xi_new - xi) < tol:
+                        root = xi_new; break
+                    x_prev, xi = xi, xi_new
+                else:
+                    root = xi
+
+            elif method == "regula":
+                aa, bb = a, b
+                for i in range(maxn):
+                    fa, fb = f_num(aa), f_num(bb)
+                    c = bb - fb * (bb - aa) / (fb - fa)
+                    fc = f_num(c)
+                    history.append((i+1, c, fc))
+                    if abs(fc) < tol:
+                        root = c; break
+                    if fa * fc < 0:
+                        bb = c
+                    else:
+                        aa = c
+                else:
+                    root = c
+
+            elif method == "brent":
+                from scipy.optimize import brentq
+                root = brentq(f_num, a, b, xtol=tol, maxiter=maxn,
+                              full_output=False)
+                history = [(1, root, f_num(root))]
+
+            # Plot
+            margin = (b - a) * 0.3
+            xs = np.linspace(a - margin, b + margin, 500)
+            with np.errstate(all='ignore'):
+                ys = np.asarray(f_num(xs), dtype=float)
+            ys[~np.isfinite(ys)] = np.nan
+
+            self.nm_rf_fig.clear()
+            ax = self.nm_rf_fig.add_subplot(111)
+            self._nm_axes(ax)
+            ax.plot(xs, ys, color='#88c0d0', linewidth=2, label='f(x)')
+            ax.axhline(0, color='#4c566a', linewidth=0.8)
+            if root is not None:
+                ax.axvline(root, color='#bf616a', linestyle='--', linewidth=1.2)
+                ax.plot(root, f_num(root), 'o', color='#ebcb8b', markersize=8,
+                        label=f'root ≈ {root:.8g}')
+            # Shade bracket
+            ax.axvspan(a, b, alpha=0.07, color='#a3be8c')
+            ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+            ax.set_title(f"{method.capitalize()}  —  f(x) = {self.nm_rf_f.text()}",
+                         color='#eceff4', fontsize=9)
+            self.nm_rf_fig.tight_layout(pad=0.6)
+            self.nm_rf_canvas.draw()
+
+            iters = len(history)
+            root_str = f"{root:.10g}" if root is not None else "not found"
+            fval_str = f"{f_num(root):.4e}" if root is not None else "—"
+            self.nm_rf_out.setHtml(
+                f"<b>Method:</b> {method} &nbsp; <b>Iterations:</b> {iters}<br>"
+                f"<b>Root ≈</b> {root_str}<br>"
+                f"<b>f(root) =</b> {fval_str}"
+            )
+            self._add_to_global_history("Numerical·Roots", method,
+                                        self.nm_rf_f.text(), f"root≈{root_str}")
+
+        except Exception as e:
+            self.nm_rf_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Numerical Integration ──────────────────────────────────────────────
+
+    def _setup_nm_integration(self):
+        tab = QWidget()
+        self._nm_tabs.addTab(tab, "Integration")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("∫ f(x) dx  from a to b")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        g.addWidget(QLabel("f(x) ="), 0, 0)
+        self.nm_int_f = QLineEdit("sin(x)**2")
+        self.nm_int_f.setStyleSheet(self._nm_field)
+        g.addWidget(self.nm_int_f, 0, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("a =", "nm_int_a", "0"),
+            ("b =", "nm_int_b", "pi"),
+            ("n  (subintervals):", "nm_int_n", "100"),
+        ], start=1):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._nm_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+
+        methods = [
+            ("Trapezoidal Rule", "trap"),
+            ("Simpson's Rule",   "simpson"),
+            ("Gaussian Quadrature", "gauss"),
+            ("Adaptive (scipy)",    "adaptive"),
+            ("Compare All",         "compare"),
+        ]
+        for lbl, act in methods:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._nm_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_nm_int(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.nm_int_fig = Figure(facecolor='#1e222b')
+        self.nm_int_canvas = FigureCanvas(self.nm_int_fig)
+        rl.addWidget(self.nm_int_canvas, 1)
+        self._nm_output(rl, "nm_int_out", 110)
+        outer.addWidget(right, 3)
+
+    def _run_nm_int(self, method):
+        from scipy.integrate import quad as _quad, fixed_quad
+        try:
+            x_sym = sympy.Symbol('x')
+            f_expr = sympy.sympify(self.nm_int_f.text())
+            f_num  = sympy.lambdify(x_sym, f_expr, 'numpy')
+            a = float(sympy.sympify(self.nm_int_a.text()).evalf())
+            b = float(sympy.sympify(self.nm_int_b.text()).evalf())
+            n = int(self.nm_int_n.text())
+            if n % 2 == 1:
+                n += 1  # Simpson requires even
+
+            xs = np.linspace(a, b, n + 1)
+            with np.errstate(all='ignore'):
+                ys = np.asarray(f_num(xs), dtype=float)
+
+            def _trap():
+                return np.trapz(ys, xs)
+
+            def _simp():
+                h = (b - a) / n
+                return h/3 * (ys[0] + 4*np.sum(ys[1:-1:2]) + 2*np.sum(ys[2:-2:2]) + ys[-1])
+
+            def _gauss():
+                return fixed_quad(lambda x: np.asarray(f_num(x), dtype=float), a, b, n=min(n, 100))[0]
+
+            def _adapt():
+                return _quad(lambda x: float(np.asarray(f_num(np.array([x])), dtype=float)[0]), a, b)[0]
+
+            results = {}
+            if method == "compare":
+                results = {
+                    "Trapezoidal":   _trap(),
+                    "Simpson's":     _simp(),
+                    "Gauss":         _gauss(),
+                    "Adaptive":      _adapt(),
+                }
+                exact_sym = sympy.integrate(f_expr, (x_sym, a, b))
+                try:
+                    exact = float(exact_sym.evalf())
+                    results["Exact (sympy)"] = exact
+                except Exception:
+                    exact = None
+            else:
+                fn_map = {"trap": _trap, "simpson": _simp,
+                          "gauss": _gauss, "adaptive": _adapt}
+                results = {method: fn_map[method]()}
+
+            # Plot
+            xs_plot = np.linspace(a, b, 400)
+            with np.errstate(all='ignore'):
+                ys_plot = np.asarray(f_num(xs_plot), dtype=float)
+            ys_plot[~np.isfinite(ys_plot)] = np.nan
+
+            self.nm_int_fig.clear()
+            ax = self.nm_int_fig.add_subplot(111)
+            self._nm_axes(ax)
+            ax.plot(xs_plot, ys_plot, color='#88c0d0', linewidth=2, label='f(x)')
+            ax.fill_between(xs_plot, ys_plot, alpha=0.18, color='#a3be8c')
+            ax.axhline(0, color='#4c566a', linewidth=0.6)
+
+            if method in ("trap", "compare"):
+                vis_n = min(n, 20)
+                xs_v = np.linspace(a, b, vis_n + 1)
+                ys_v = np.asarray(f_num(xs_v), dtype=float)
+                ax.vlines(xs_v, 0, ys_v, colors='#ebcb8b', linewidth=0.8, alpha=0.6)
+            elif method == "simpson":
+                vis_n = min(n, 20)
+                if vis_n % 2: vis_n += 1
+                xs_v = np.linspace(a, b, vis_n + 1)
+                ys_v = np.asarray(f_num(xs_v), dtype=float)
+                ax.vlines(xs_v, 0, ys_v, colors='#b48ead', linewidth=0.8, alpha=0.6)
+
+            ax.set_title(f"∫ f(x) dx  on [{a:.4g}, {b:.4g}]", color='#eceff4', fontsize=9)
+            ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+            self.nm_int_fig.tight_layout(pad=0.6)
+            self.nm_int_canvas.draw()
+
+            html = "<br>".join(
+                f"<b>{k}:</b> {v:.10g}" for k, v in results.items()
+            )
+            self.nm_int_out.setHtml(html)
+            primary_val = list(results.values())[0]
+            self._add_to_global_history("Numerical·Integration", method,
+                                        self.nm_int_f.text(), f"{primary_val:.8g}")
+
+        except Exception as e:
+            self.nm_int_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Interpolation ──────────────────────────────────────────────────────
+
+    def _setup_nm_interpolation(self):
+        tab = QWidget()
+        self._nm_tabs.addTab(tab, "Interpolation")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Data Points")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        hint = QLabel("x values (comma/space separated):")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        g.addWidget(hint, 0, 0, 1, 2)
+        self.nm_ip_x = QTextEdit("0, 1, 2, 3, 4, 5")
+        self.nm_ip_x.setFixedHeight(36)
+        self.nm_ip_x.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        g.addWidget(self.nm_ip_x, 1, 0, 1, 2)
+        hint2 = QLabel("y values:")
+        hint2.setStyleSheet("color: #4c566a; font-size: 10px;")
+        g.addWidget(hint2, 2, 0, 1, 2)
+        self.nm_ip_y = QTextEdit("0, 1, 4, 9, 16, 25")
+        self.nm_ip_y.setFixedHeight(36)
+        self.nm_ip_y.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        g.addWidget(self.nm_ip_y, 3, 0, 1, 2)
+
+        g.addWidget(QLabel("Eval at x ="), 4, 0)
+        self.nm_ip_eval = QLineEdit("2.5")
+        self.nm_ip_eval.setStyleSheet(self._nm_field)
+        g.addWidget(self.nm_ip_eval, 4, 1)
+
+        methods = [
+            ("Lagrange Polynomial", "lagrange"),
+            ("Newton Divided Diff.", "newton_dd"),
+            ("Cubic Spline (natural)","cubic_spline"),
+            ("Linear Spline",         "linear"),
+        ]
+        for lbl, act in methods:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._nm_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_nm_interp(a))
+            g.addWidget(btn, g.rowCount(), 0, 1, 2)
+        ll.addWidget(grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.nm_ip_fig = Figure(facecolor='#1e222b')
+        self.nm_ip_canvas = FigureCanvas(self.nm_ip_fig)
+        rl.addWidget(self.nm_ip_canvas, 1)
+        self._nm_output(rl, "nm_ip_out", 90)
+        outer.addWidget(right, 3)
+
+    def _run_nm_interp(self, method):
+        from scipy.interpolate import CubicSpline, interp1d
+        try:
+            def _parse(text):
+                return np.array([float(v) for v in text.replace(',', ' ').split()])
+
+            xs = _parse(self.nm_ip_x.toPlainText())
+            ys = _parse(self.nm_ip_y.toPlainText())
+            xe = float(self.nm_ip_eval.text())
+
+            order = np.argsort(xs)
+            xs, ys = xs[order], ys[order]
+
+            x_plot = np.linspace(xs[0], xs[-1], 500)
+
+            if method == "lagrange":
+                def _lagrange(x_eval):
+                    total = 0.0
+                    for i in range(len(xs)):
+                        term = ys[i]
+                        for j in range(len(xs)):
+                            if i != j:
+                                term *= (x_eval - xs[j]) / (xs[i] - xs[j])
+                        total += term
+                    return total
+                y_plot = np.array([_lagrange(xi) for xi in x_plot])
+                y_eval = _lagrange(xe)
+
+            elif method == "newton_dd":
+                n = len(xs)
+                dd = ys.copy().astype(float)
+                coefs = [dd[0]]
+                for lvl in range(1, n):
+                    dd_new = np.diff(dd[:n-lvl]) / (xs[lvl:] - xs[:n-lvl])
+                    dd = dd_new
+                    coefs.append(dd[0])
+                def _newton(x_eval):
+                    val = coefs[-1]
+                    for k in range(len(coefs)-2, -1, -1):
+                        val = val * (x_eval - xs[k]) + coefs[k]
+                    return val
+                y_plot = np.array([_newton(xi) for xi in x_plot])
+                y_eval = _newton(xe)
+
+            elif method == "cubic_spline":
+                cs = CubicSpline(xs, ys, bc_type='natural')
+                y_plot = cs(x_plot)
+                y_eval = float(cs(xe))
+
+            elif method == "linear":
+                li = interp1d(xs, ys, kind='linear', fill_value='extrapolate')
+                y_plot = li(x_plot)
+                y_eval = float(li(xe))
+
+            # Clip runaway polynomial oscillations for display
+            y_finite = y_plot[np.isfinite(y_plot)]
+            if len(y_finite):
+                lo = np.percentile(y_finite, 1); hi = np.percentile(y_finite, 99)
+                pad = max(abs(hi - lo) * 0.5, 1)
+                y_plot = np.clip(y_plot, lo - pad, hi + pad)
+
+            self.nm_ip_fig.clear()
+            ax = self.nm_ip_fig.add_subplot(111)
+            self._nm_axes(ax)
+            ax.scatter(xs, ys, color='#ebcb8b', s=50, zorder=5, label='data')
+            ax.plot(x_plot, y_plot, color='#88c0d0', linewidth=2,
+                    label=method.replace('_', ' '))
+            ax.axvline(xe, color='#b48ead', linestyle=':', linewidth=1)
+            ax.plot(xe, y_eval, 's', color='#bf616a', markersize=8,
+                    label=f'f({xe:.4g}) ≈ {y_eval:.6g}')
+            ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+            ax.set_title(method.replace('_', ' ').title(), color='#eceff4', fontsize=9)
+            self.nm_ip_fig.tight_layout(pad=0.6)
+            self.nm_ip_canvas.draw()
+
+            self.nm_ip_out.setHtml(
+                f"<b>Method:</b> {method.replace('_', ' ')}<br>"
+                f"<b>Points:</b> {len(xs)}<br>"
+                f"<b>f({xe:.4g}) ≈</b> {y_eval:.10g}"
+            )
+            self._add_to_global_history("Numerical·Interp", method,
+                                        f"n={len(xs)}", f"f({xe})≈{y_eval:.6g}")
+
+        except Exception as e:
+            self.nm_ip_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Curve Fitting ──────────────────────────────────────────────────────
+
+    def _setup_nm_fitting(self):
+        tab = QWidget()
+        self._nm_tabs.addTab(tab, "Curve Fitting")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        grp = QGroupBox("Data")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        for row, (hint_text, attr, default) in enumerate([
+            ("x values (comma/space):", "nm_fit_x", "1, 2, 3, 4, 5, 6, 7, 8"),
+            ("y values:",               "nm_fit_y", "2.1, 3.9, 8.1, 16.0, 24.9, 36.1, 49.0, 63.8"),
+        ]):
+            hint = QLabel(hint_text)
+            hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+            g.addWidget(hint, row*2, 0, 1, 2)
+            te = QTextEdit(default)
+            te.setFixedHeight(36)
+            te.setStyleSheet(
+                "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+                "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+            )
+            setattr(self, attr, te)
+            g.addWidget(te, row*2+1, 0, 1, 2)
+        ll.addWidget(grp)
+
+        model_grp = QGroupBox("Model")
+        mg = QGridLayout(model_grp)
+        mg.setSpacing(8)
+
+        mg.addWidget(QLabel("Polynomial degree:"), 0, 0)
+        self.nm_fit_deg = QLineEdit("2")
+        self.nm_fit_deg.setFixedWidth(50)
+        self.nm_fit_deg.setStyleSheet(self._nm_field)
+        mg.addWidget(self.nm_fit_deg, 0, 1)
+
+        mg.addWidget(QLabel("Custom f(x, …):"), 1, 0)
+        self.nm_fit_custom = QLineEdit("a * exp(-b * x) + c")
+        self.nm_fit_custom.setStyleSheet(self._nm_field)
+        mg.addWidget(self.nm_fit_custom, 1, 1)
+
+        hint3 = QLabel("Parameters are any letters in the expression except x")
+        hint3.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint3.setWordWrap(True)
+        mg.addWidget(hint3, 2, 0, 1, 2)
+
+        fitting_methods = [
+            ("Polynomial Fit",        "poly"),
+            ("Linear (OLS)",          "linear"),
+            ("Exponential  a·eᵇˣ",   "exp"),
+            ("Power Law  a·xᵇ",       "power"),
+            ("Custom Model (curve_fit)","custom"),
+        ]
+        for lbl, act in fitting_methods:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._nm_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_nm_fit(a))
+            mg.addWidget(btn, mg.rowCount(), 0, 1, 2)
+        ll.addWidget(model_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.nm_fit_fig = Figure(facecolor='#1e222b')
+        self.nm_fit_canvas = FigureCanvas(self.nm_fit_fig)
+        rl.addWidget(self.nm_fit_canvas, 1)
+        self._nm_output(rl, "nm_fit_out", 120)
+        outer.addWidget(right, 3)
+
+    def _run_nm_fit(self, method):
+        from scipy.optimize import curve_fit
+        import re
+        try:
+            def _parse(text):
+                return np.array([float(v) for v in text.replace(',', ' ').split()])
+
+            xs = _parse(self.nm_fit_x.toPlainText())
+            ys = _parse(self.nm_fit_y.toPlainText())
+            x_plot = np.linspace(xs.min(), xs.max(), 400)
+
+            self.nm_fit_fig.clear()
+            ax = self.nm_fit_fig.add_subplot(111)
+            self._nm_axes(ax)
+            ax.scatter(xs, ys, color='#ebcb8b', s=50, zorder=5, label='data')
+
+            label = method
+            r2_str = ""
+
+            if method == "poly":
+                deg = int(self.nm_fit_deg.text())
+                coeffs = np.polyfit(xs, ys, deg)
+                p = np.poly1d(coeffs)
+                y_fit = p(x_plot)
+                y_pred = p(xs)
+                terms = [f"{c:+.4g}·x^{deg-i}" if (deg-i)>1
+                         else (f"{c:+.4g}·x" if (deg-i)==1 else f"{c:+.4g}")
+                         for i, c in enumerate(coeffs)]
+                eq = "f(x) = " + " ".join(terms)
+                label = f"poly deg {deg}"
+
+            elif method == "linear":
+                coeffs = np.polyfit(xs, ys, 1)
+                p = np.poly1d(coeffs)
+                y_fit = p(x_plot)
+                y_pred = p(xs)
+                eq = f"f(x) = {coeffs[0]:+.6g}·x {coeffs[1]:+.6g}"
+                label = "linear"
+
+            elif method == "exp":
+                def _exp_model(x, a, b): return a * np.exp(b * x)
+                popt, _ = curve_fit(_exp_model, xs, ys, p0=[1, 0.1], maxfev=10000)
+                y_fit  = _exp_model(x_plot, *popt)
+                y_pred = _exp_model(xs, *popt)
+                eq = f"f(x) = {popt[0]:.6g}·exp({popt[1]:.6g}·x)"
+                label = "exp fit"
+
+            elif method == "power":
+                # Need positive x and y
+                mask = (xs > 0) & (ys > 0)
+                lx, ly = np.log(xs[mask]), np.log(ys[mask])
+                b, log_a = np.polyfit(lx, ly, 1)
+                a = np.exp(log_a)
+                y_fit  = a * x_plot**b
+                y_pred = a * xs**b
+                eq = f"f(x) = {a:.6g}·x^{b:.6g}"
+                label = "power fit"
+
+            elif method == "custom":
+                raw = self.nm_fit_custom.text()
+                param_names = sorted(set(re.findall(r'\b([a-wyzA-Z])\b', raw)) - {'x', 'e'})
+                x_sym = sympy.Symbol('x')
+                param_syms = [sympy.Symbol(p) for p in param_names]
+                expr = sympy.sympify(raw)
+                f_lam = sympy.lambdify([x_sym] + param_syms, expr, 'numpy')
+                def _custom_model(x, *params):
+                    return np.asarray(f_lam(x, *params), dtype=float)
+                p0 = [1.0] * len(param_names)
+                popt, pcov = curve_fit(_custom_model, xs, ys, p0=p0, maxfev=20000)
+                y_fit  = _custom_model(x_plot, *popt)
+                y_pred = _custom_model(xs, *popt)
+                eq = "f(x) = " + raw + "  →  " + ", ".join(
+                    f"{n}={v:.5g}" for n, v in zip(param_names, popt))
+                label = "custom"
+
+            # R² score
+            ss_res = np.sum((ys - y_pred)**2)
+            ss_tot = np.sum((ys - np.mean(ys))**2)
+            r2 = 1 - ss_res / ss_tot if ss_tot > 0 else float('nan')
+            r2_str = f"R² = {r2:.6f}"
+
+            ax.plot(x_plot, y_fit, color='#88c0d0', linewidth=2, label=label)
+            ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+            ax.set_title(f"Curve fit  —  {label}", color='#eceff4', fontsize=9)
+            self.nm_fit_fig.tight_layout(pad=0.6)
+            self.nm_fit_canvas.draw()
+
+            self.nm_fit_out.setHtml(
+                f"<b>Model:</b> {eq}<br>"
+                f"<b>{r2_str}</b>"
+            )
+            self._add_to_global_history("Numerical·Fitting", method,
+                                        f"n={len(xs)}", r2_str)
+
+        except Exception as e:
+            self.nm_fit_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Graph Theory tab
+    # ══════════════════════════════════════════════════════════════════════
+
+    def setup_graph_theory_tab(self):
+        import networkx as nx
+        self._nx = nx
+        w = QWidget()
+        self.tabs.addTab(w, "Graph Theory")
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        self._gt_tabs = QTabWidget()
+        outer.addWidget(self._gt_tabs)
+        self._gt_field = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        self._gt_btn = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+        )
+        self._gt_graph = None   # current nx graph
+        self._setup_gt_editor()
+        self._setup_gt_algorithms()
+        self._setup_gt_mst_color()
+        self._setup_gt_properties()
+
+    # ── shared helpers ─────────────────────────────────────────────────────
+
+    def _gt_parse_graph(self):
+        """Parse edge list from _gt_edges QTextEdit → nx.Graph / nx.DiGraph."""
+        nx = self._nx
+        directed = self._gt_directed.isChecked()
+        weighted = self._gt_weighted.isChecked()
+        G = nx.DiGraph() if directed else nx.Graph()
+        text = self._gt_edges.toPlainText().strip()
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            parts = line.replace(',', ' ').split()
+            if len(parts) >= 2:
+                u, v = parts[0], parts[1]
+                w = float(parts[2]) if (weighted and len(parts) >= 3) else 1.0
+                G.add_edge(u, v, weight=w)
+        return G
+
+    def _gt_draw(self, ax, G, node_colors=None, edge_colors=None,
+                 labels=None, highlight_edges=None, title=""):
+        nx = self._nx
+        layout_name = self._gt_layout.currentText()
+        layouts = {
+            "Spring":    nx.spring_layout,
+            "Circular":  nx.circular_layout,
+            "Shell":     nx.shell_layout,
+            "Spectral":  nx.spectral_layout,
+            "Kamada-Kawai": nx.kamada_kawai_layout,
+            "Random":    nx.random_layout,
+        }
+        try:
+            pos = layouts.get(layout_name, nx.spring_layout)(G, seed=42)
+        except Exception:
+            pos = nx.spring_layout(G, seed=42)
+
+        ax.set_facecolor('#1a1e27')
+        ax.set_xticks([]); ax.set_yticks([])
+        for sp in ax.spines.values(): sp.set_visible(False)
+
+        n_colors = node_colors if node_colors else ['#5e81ac'] * len(G.nodes)
+        e_colors = edge_colors if edge_colors else ['#4c566a'] * len(G.edges)
+
+        nx.draw_networkx_nodes(G, pos, ax=ax, node_color=n_colors,
+                               node_size=500, alpha=0.95)
+        nx.draw_networkx_labels(G, pos, ax=ax,
+                                font_color='#eceff4', font_size=9, font_weight='bold')
+
+        arrows = isinstance(G, nx.DiGraph)
+        nx.draw_networkx_edges(G, pos, ax=ax, edge_color=e_colors,
+                               width=1.8, alpha=0.75, arrows=arrows,
+                               arrowsize=18, arrowstyle='->')
+
+        if highlight_edges:
+            nx.draw_networkx_edges(G, pos, edgelist=highlight_edges, ax=ax,
+                                   edge_color='#ebcb8b', width=3.0, alpha=0.95,
+                                   arrows=arrows, arrowsize=20, arrowstyle='->')
+
+        if self._gt_weighted.isChecked():
+            edge_labels = nx.get_edge_attributes(G, 'weight')
+            edge_labels = {k: f"{v:.4g}" for k, v in edge_labels.items()}
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, ax=ax,
+                                         font_color='#88c0d0', font_size=7)
+        if title:
+            ax.set_title(title, color='#eceff4', fontsize=9, pad=4)
+
+    def _gt_output(self, layout, attr, max_h=120):
+        tb = QTextBrowser()
+        tb.setMaximumHeight(max_h)
+        tb.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        setattr(self, attr, tb)
+        layout.addWidget(tb)
+
+    # ── Graph Editor ───────────────────────────────────────────────────────
+
+    def _setup_gt_editor(self):
+        tab = QWidget()
+        self._gt_tabs.addTab(tab, "Graph")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(8)
+
+        grp = QGroupBox("Edge List")
+        gl = QVBoxLayout(grp)
+        hint = QLabel("One edge per line:  u v  [weight]\nExample:  A B 3")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        gl.addWidget(hint)
+        self._gt_edges = QTextEdit("A B 1\nA C 4\nB C 2\nB D 5\nC D 1\nD E 3\nC E 2")
+        self._gt_edges.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        gl.addWidget(self._gt_edges)
+        ll.addWidget(grp)
+
+        opt_grp = QGroupBox("Options")
+        og = QGridLayout(opt_grp)
+        og.setSpacing(6)
+
+        from PyQt6.QtWidgets import QCheckBox
+        self._gt_directed = QCheckBox("Directed")
+        self._gt_directed.setStyleSheet("color: #eceff4;")
+        self._gt_weighted = QCheckBox("Weighted")
+        self._gt_weighted.setChecked(True)
+        self._gt_weighted.setStyleSheet("color: #eceff4;")
+        og.addWidget(self._gt_directed, 0, 0)
+        og.addWidget(self._gt_weighted, 0, 1)
+
+        og.addWidget(QLabel("Layout:"), 1, 0)
+        self._gt_layout = QComboBox()
+        self._gt_layout.addItems(["Spring", "Circular", "Shell", "Spectral",
+                                   "Kamada-Kawai", "Random"])
+        self._gt_layout.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 3px; font-size: 12px;"
+        )
+        og.addWidget(self._gt_layout, 1, 1)
+        ll.addWidget(opt_grp)
+
+        preset_grp = QGroupBox("Presets")
+        pg = QGridLayout(preset_grp)
+        presets = {
+            "Petersen":  "0 1\n0 4\n0 5\n1 2\n1 6\n2 3\n2 7\n3 4\n3 8\n4 9\n5 7\n5 8\n6 8\n6 9\n7 9",
+            "K5":        "A B\nA C\nA D\nA E\nB C\nB D\nB E\nC D\nC E\nD E",
+            "K3,3":      "1 A\n1 B\n1 C\n2 A\n2 B\n2 C\n3 A\n3 B\n3 C",
+            "Cycle C6":  "1 2\n2 3\n3 4\n4 5\n5 6\n6 1",
+            "Tree":      "r A\nr B\nA C\nA D\nB E\nB F\nC G",
+            "DAG":       "A B 2\nA C 3\nB D 1\nC D 4\nC E 2\nD F 5\nE F 1",
+        }
+        for idx, (label, edges) in enumerate(presets.items()):
+            btn = QPushButton(label)
+            btn.setStyleSheet(self._gt_btn.replace("min-height: 34px","min-height:26px"))
+            btn.clicked.connect(lambda _, e=edges: self._gt_edges.setPlainText(e))
+            pg.addWidget(btn, idx // 3, idx % 3)
+        ll.addWidget(preset_grp)
+
+        draw_btn = QPushButton("Draw Graph")
+        draw_btn.setStyleSheet(self._gt_btn)
+        draw_btn.clicked.connect(self._run_gt_draw)
+        ll.addWidget(draw_btn)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._gt_fig = Figure(facecolor='#1a1e27')
+        self._gt_canvas = FigureCanvas(self._gt_fig)
+        rl.addWidget(self._gt_canvas, 1)
+        self._gt_output(rl, '_gt_draw_out', 90)
+        outer.addWidget(right, 3)
+
+    def _run_gt_draw(self):
+        try:
+            G = self._gt_parse_graph()
+            self._gt_graph = G
+            nx = self._nx
+            self._gt_fig.clear()
+            ax = self._gt_fig.add_subplot(111)
+            self._gt_draw(ax, G, title=f"Graph  —  {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+            self._gt_fig.tight_layout(pad=0.3)
+            self._gt_canvas.draw()
+
+            deg = dict(G.degree())
+            deg_seq = sorted(deg.values(), reverse=True)
+            self._gt_draw_out.setHtml(
+                f"<b>Nodes:</b> {G.number_of_nodes()}  "
+                f"<b>Edges:</b> {G.number_of_edges()}<br>"
+                f"<b>Degree sequence:</b> {deg_seq}<br>"
+                f"<b>Density:</b> {nx.density(G):.4g}"
+            )
+            self._add_to_global_history("GraphTheory", "draw",
+                                        f"{G.number_of_nodes()}n,{G.number_of_edges()}e",
+                                        f"density={nx.density(G):.4g}")
+        except Exception as e:
+            self._gt_draw_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Algorithms ─────────────────────────────────────────────────────────
+
+    def _setup_gt_algorithms(self):
+        tab = QWidget()
+        self._gt_tabs.addTab(tab, "Algorithms")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(8)
+
+        grp = QGroupBox("Parameters")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        for row, (lbl, attr, default) in enumerate([
+            ("Source node:", "_gt_src", "A"),
+            ("Target node:", "_gt_tgt", "F"),
+        ]):
+            g.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._gt_field)
+            setattr(self, attr, w)
+            g.addWidget(w, row, 1)
+        ll.addWidget(grp)
+
+        algo_grp = QGroupBox("Algorithm")
+        ag = QGridLayout(algo_grp)
+        ag.setSpacing(8)
+        algos = [
+            ("BFS  (breadth-first)",   "bfs"),
+            ("DFS  (depth-first)",      "dfs"),
+            ("Dijkstra shortest path",  "dijkstra"),
+            ("Bellman-Ford",            "bellman_ford"),
+            ("Floyd-Warshall  (all-pairs)", "floyd"),
+            ("Topological Sort  (DAG)", "topo_sort"),
+        ]
+        for idx, (lbl, act) in enumerate(algos):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._gt_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_gt_algo(a))
+            ag.addWidget(btn, idx // 2, idx % 2)
+        ll.addWidget(algo_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._gt_algo_fig = Figure(facecolor='#1a1e27')
+        self._gt_algo_canvas = FigureCanvas(self._gt_algo_fig)
+        rl.addWidget(self._gt_algo_canvas, 1)
+        self._gt_output(rl, '_gt_algo_out', 130)
+        outer.addWidget(right, 3)
+
+    def _run_gt_algo(self, algo):
+        try:
+            if self._gt_graph is None:
+                self._gt_graph = self._gt_parse_graph()
+            G = self._gt_graph
+            nx = self._nx
+            src = self._gt_src.text().strip()
+            tgt = self._gt_tgt.text().strip()
+
+            highlight = []
+            node_colors = {n: '#5e81ac' for n in G.nodes}
+            result_html = ""
+
+            if algo == "bfs":
+                order = list(nx.bfs_tree(G, src).nodes())
+                for i, n in enumerate(order):
+                    node_colors[n] = f"#{min(0x5e+i*20,0xff):02x}81ac"
+                result_html = (f"<b>BFS from {src}:</b><br>"
+                               + " → ".join(order))
+                highlight = list(nx.bfs_tree(G, src).edges())
+
+            elif algo == "dfs":
+                order = list(nx.dfs_tree(G, src).nodes())
+                for i, n in enumerate(order):
+                    node_colors[n] = f"#{min(0xa3+i*8,0xff):02x}be8c"
+                result_html = (f"<b>DFS from {src}:</b><br>"
+                               + " → ".join(order))
+                highlight = list(nx.dfs_tree(G, src).edges())
+
+            elif algo == "dijkstra":
+                length, path = nx.single_source_dijkstra(G, src, tgt,
+                                                          weight='weight')
+                highlight = list(zip(path, path[1:]))
+                for n in path:
+                    node_colors[n] = '#ebcb8b'
+                result_html = (f"<b>Dijkstra  {src} → {tgt}</b><br>"
+                               f"Path: {' → '.join(path)}<br>"
+                               f"Total weight: <b>{length:.6g}</b>")
+
+            elif algo == "bellman_ford":
+                length, path = nx.single_source_bellman_ford(G, src, tgt,
+                                                              weight='weight')
+                highlight = list(zip(path, path[1:]))
+                for n in path:
+                    node_colors[n] = '#ebcb8b'
+                result_html = (f"<b>Bellman-Ford  {src} → {tgt}</b><br>"
+                               f"Path: {' → '.join(path)}<br>"
+                               f"Total weight: <b>{length:.6g}</b>")
+
+            elif algo == "floyd":
+                lengths = dict(nx.all_pairs_dijkstra_path_length(G, weight='weight'))
+                rows = []
+                nodes = sorted(G.nodes())
+                header = "From\\To  " + "  ".join(f"{n:>5}" for n in nodes)
+                rows.append(header)
+                for u in nodes:
+                    row = f"{u:>5}    " + "  ".join(
+                        f"{lengths[u].get(v, float('inf')):>5.2g}" for v in nodes)
+                    rows.append(row)
+                result_html = ("<b>All-pairs shortest paths:</b><br><pre style='font-size:10px;'>"
+                               + "\n".join(rows) + "</pre>")
+
+            elif algo == "topo_sort":
+                UG = G if isinstance(G, nx.DiGraph) else nx.DiGraph(G)
+                try:
+                    order = list(nx.topological_sort(UG))
+                    result_html = (f"<b>Topological order:</b><br>"
+                                   + " → ".join(order))
+                    for i, n in enumerate(order):
+                        node_colors[n] = f"#{min(0x88+i*16,0xff):02x}c0d0"
+                except nx.NetworkXUnfeasible:
+                    result_html = "<b style='color:#bf616a'>Graph contains a cycle — no topological order.</b>"
+
+            colors = [node_colors.get(n, '#5e81ac') for n in G.nodes]
+            self._gt_algo_fig.clear()
+            ax = self._gt_algo_fig.add_subplot(111)
+            self._gt_draw(ax, G, node_colors=colors,
+                          highlight_edges=highlight,
+                          title=algo.replace('_', ' ').title())
+            self._gt_algo_fig.tight_layout(pad=0.3)
+            self._gt_algo_canvas.draw()
+            self._gt_algo_out.setHtml(result_html)
+            self._add_to_global_history("GraphTheory", algo, f"{src}→{tgt}",
+                                        result_html[:120].replace('<b>','').replace('</b>',''))
+
+        except Exception as e:
+            self._gt_algo_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── MST & Coloring ──────────────────────────────────────────────────────
+
+    def _setup_gt_mst_color(self):
+        tab = QWidget()
+        self._gt_tabs.addTab(tab, "MST & Coloring")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(8)
+
+        mst_grp = QGroupBox("Minimum Spanning Tree")
+        mg = QGridLayout(mst_grp)
+        mg.setSpacing(8)
+        for lbl, act in [("Kruskal's MST", "kruskal"), ("Prim's MST", "prim"),
+                          ("Maximum ST", "max_st")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._gt_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_gt_mst(a))
+            mg.addWidget(btn, mg.rowCount(), 0, 1, 2)
+        ll.addWidget(mst_grp)
+
+        col_grp = QGroupBox("Graph Coloring")
+        cg = QGridLayout(col_grp)
+        cg.setSpacing(8)
+        for lbl, act in [("Greedy Coloring", "greedy"),
+                          ("Largest-First", "largest_first"),
+                          ("DSATUR heuristic", "dsatur")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._gt_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_gt_color(a))
+            cg.addWidget(btn, cg.rowCount(), 0, 1, 2)
+        ll.addWidget(col_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._gt_mst_fig = Figure(facecolor='#1a1e27')
+        self._gt_mst_canvas = FigureCanvas(self._gt_mst_fig)
+        rl.addWidget(self._gt_mst_canvas, 1)
+        self._gt_output(rl, '_gt_mst_out', 110)
+        outer.addWidget(right, 3)
+
+    def _run_gt_mst(self, method):
+        try:
+            if self._gt_graph is None:
+                self._gt_graph = self._gt_parse_graph()
+            G = self._gt_graph
+            nx = self._nx
+            UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
+
+            if method == "max_st":
+                T = nx.maximum_spanning_tree(UG, weight='weight', algorithm='kruskal')
+                label = "Maximum Spanning Tree"
+            elif method == "prim":
+                T = nx.minimum_spanning_tree(UG, weight='weight', algorithm='prim')
+                label = "MST  (Prim)"
+            else:
+                T = nx.minimum_spanning_tree(UG, weight='weight', algorithm='kruskal')
+                label = "MST  (Kruskal)"
+
+            total_w = sum(d.get('weight', 1) for _, _, d in T.edges(data=True))
+            mst_edges = list(T.edges())
+
+            self._gt_mst_fig.clear()
+            ax = self._gt_mst_fig.add_subplot(111)
+            self._gt_draw(ax, UG, highlight_edges=mst_edges, title=label)
+            self._gt_mst_fig.tight_layout(pad=0.3)
+            self._gt_mst_canvas.draw()
+
+            edge_list = "  ".join(f"{u}-{v}" for u,v in mst_edges)
+            self._gt_mst_out.setHtml(
+                f"<b>{label}</b><br>"
+                f"Edges ({T.number_of_edges()}): {edge_list}<br>"
+                f"Total weight: <b>{total_w:.6g}</b>"
+            )
+            self._add_to_global_history("GraphTheory", method, "", f"total_w={total_w:.4g}")
+        except Exception as e:
+            self._gt_mst_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    def _run_gt_color(self, strategy):
+        try:
+            if self._gt_graph is None:
+                self._gt_graph = self._gt_parse_graph()
+            G = self._gt_graph
+            nx = self._nx
+            UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
+
+            strat_map = {
+                "greedy":       "largest_first",
+                "largest_first":"largest_first",
+                "dsatur":       "DSATUR",
+            }
+            coloring = nx.coloring.greedy_color(UG, strategy=strat_map[strategy])
+            num_colors = max(coloring.values()) + 1
+
+            palette = ['#bf616a','#ebcb8b','#a3be8c','#88c0d0',
+                       '#5e81ac','#b48ead','#d08770','#81a1c1']
+            node_colors = [palette[coloring[n] % len(palette)] for n in UG.nodes]
+
+            self._gt_mst_fig.clear()
+            ax = self._gt_mst_fig.add_subplot(111)
+            self._gt_draw(ax, UG, node_colors=node_colors,
+                          title=f"Coloring  ({num_colors} colors)")
+            self._gt_mst_fig.tight_layout(pad=0.3)
+            self._gt_mst_canvas.draw()
+
+            groups = {}
+            for node, color in coloring.items():
+                groups.setdefault(color, []).append(str(node))
+            color_html = "  ".join(f"<b>C{c}:</b> {','.join(ns)}" for c, ns in sorted(groups.items()))
+            self._gt_mst_out.setHtml(
+                f"<b>Chromatic number χ ≤ {num_colors}</b><br>{color_html}"
+            )
+            self._add_to_global_history("GraphTheory", f"coloring-{strategy}", "",
+                                        f"χ≤{num_colors}")
+        except Exception as e:
+            self._gt_mst_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Properties ─────────────────────────────────────────────────────────
+
+    def _setup_gt_properties(self):
+        tab = QWidget()
+        self._gt_tabs.addTab(tab, "Properties")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(8)
+
+        prop_grp = QGroupBox("Graph Properties")
+        pg = QGridLayout(prop_grp)
+        pg.setSpacing(8)
+        props = [
+            ("Basic Info",           "basic"),
+            ("Degree Sequence",      "degree"),
+            ("Connected Components", "components"),
+            ("Is Bipartite?",        "bipartite"),
+            ("Eulerian Path/Circuit","eulerian"),
+            ("Adjacency Matrix",     "adj_matrix"),
+            ("Centrality (degree)",  "centrality_deg"),
+            ("Centrality (betweenness)", "centrality_bet"),
+        ]
+        for idx, (lbl, act) in enumerate(props):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._gt_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_gt_props(a))
+            pg.addWidget(btn, idx // 2, idx % 2)
+        ll.addWidget(prop_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self._gt_prop_fig = Figure(facecolor='#1a1e27')
+        self._gt_prop_canvas = FigureCanvas(self._gt_prop_fig)
+        rl.addWidget(self._gt_prop_canvas, 1)
+        self._gt_output(rl, '_gt_prop_out', 160)
+        outer.addWidget(right, 3)
+
+    def _run_gt_props(self, prop):
+        try:
+            if self._gt_graph is None:
+                self._gt_graph = self._gt_parse_graph()
+            G = self._gt_graph
+            nx = self._nx
+            UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
+
+            node_colors = ['#5e81ac'] * len(G.nodes)
+            result_html = ""
+
+            if prop == "basic":
+                n, m = G.number_of_nodes(), G.number_of_edges()
+                directed = isinstance(G, nx.DiGraph)
+                result_html = (
+                    f"<b>Nodes:</b> {n}  <b>Edges:</b> {m}<br>"
+                    f"<b>Directed:</b> {directed}<br>"
+                    f"<b>Density:</b> {nx.density(G):.4g}<br>"
+                    f"<b>Self-loops:</b> {nx.number_of_selfloops(G)}<br>"
+                    f"<b>Connected:</b> {nx.is_connected(UG)}<br>"
+                    + (f"<b>Diameter:</b> {nx.diameter(UG)}<br>" if nx.is_connected(UG) else "")
+                    + (f"<b>Radius:</b> {nx.radius(UG)}" if nx.is_connected(UG) else "")
+                )
+
+            elif prop == "degree":
+                deg = sorted(G.degree(), key=lambda x: -x[1])
+                max_d = max(d for _, d in deg)
+                palette = ['#5e81ac','#88c0d0','#a3be8c','#ebcb8b','#bf616a']
+                node_colors = [palette[min(d // max(1, max_d // 4), 4)]
+                               for n, d in sorted(G.degree(), key=lambda x: list(G.nodes).index(x[0]))]
+                seq = sorted([d for _, d in G.degree()], reverse=True)
+                rows = "".join(f"<b>{n}:</b> {d}  " for n, d in deg)
+                result_html = (f"<b>Degree sequence:</b> {seq}<br>"
+                               f"<b>Min deg:</b> {min(seq)}  "
+                               f"<b>Max deg:</b> {max(seq)}  "
+                               f"<b>Avg deg:</b> {sum(seq)/len(seq):.3g}<br>"
+                               f"<br>{rows}")
+
+            elif prop == "components":
+                comps = list(nx.connected_components(UG))
+                comps.sort(key=len, reverse=True)
+                palette = ['#5e81ac','#a3be8c','#ebcb8b','#bf616a','#b48ead','#88c0d0']
+                comp_map = {n: i for i, c in enumerate(comps) for n in c}
+                node_colors = [palette[comp_map.get(n,0) % len(palette)] for n in G.nodes]
+                rows = "".join(f"<b>C{i+1} ({len(c)} nodes):</b> {', '.join(sorted(c))}<br>"
+                               for i, c in enumerate(comps))
+                result_html = f"<b>Connected components:</b> {len(comps)}<br>" + rows
+
+            elif prop == "bipartite":
+                is_bip = nx.is_bipartite(UG)
+                if is_bip:
+                    sets = nx.bipartite.sets(UG)
+                    node_colors = ['#88c0d0' if n in sets[0] else '#a3be8c' for n in G.nodes]
+                    result_html = (f"<b>Bipartite: Yes</b><br>"
+                                   f"Set X: {', '.join(sorted(str(n) for n in sets[0]))}<br>"
+                                   f"Set Y: {', '.join(sorted(str(n) for n in sets[1]))}")
+                else:
+                    result_html = "<b>Bipartite: No</b>"
+
+            elif prop == "eulerian":
+                has_circuit = nx.is_eulerian(UG)
+                has_path = nx.has_eulerian_path(UG)
+                if has_circuit:
+                    path = list(nx.eulerian_circuit(UG))
+                    hl = path
+                    result_html = (f"<b>Eulerian circuit exists</b><br>"
+                                   f"{'  →  '.join(str(u) for u,v in path) + '  →  ' + str(path[0][0])}")
+                elif has_path:
+                    path = list(nx.eulerian_path(UG))
+                    hl = path
+                    result_html = (f"<b>Eulerian path exists</b><br>"
+                                   f"{'  →  '.join(str(u) for u,v in path) + '  →  ' + str(path[-1][1])}")
+                else:
+                    odd_deg = [n for n, d in UG.degree() if d % 2 == 1]
+                    result_html = (f"<b>No Eulerian path or circuit</b><br>"
+                                   f"Odd-degree nodes: {odd_deg}")
+
+            elif prop == "adj_matrix":
+                nodes = sorted(G.nodes())
+                A = nx.to_numpy_array(G, nodelist=nodes)
+                header = "     " + "  ".join(f"{n:>4}" for n in nodes)
+                rows = [header]
+                for i, n in enumerate(nodes):
+                    row = f"{n:>4}: " + "  ".join(f"{int(A[i,j]):>4}" if A[i,j]==int(A[i,j])
+                                                   else f"{A[i,j]:>4.2g}" for j in range(len(nodes)))
+                    rows.append(row)
+                result_html = ("<b>Adjacency matrix:</b><br>"
+                               "<pre style='font-size:9px;'>" + "\n".join(rows) + "</pre>")
+
+            elif prop == "centrality_deg":
+                cent = nx.degree_centrality(G)
+                cent_sorted = sorted(cent.items(), key=lambda x: -x[1])
+                max_c = max(cent.values()) if cent else 1
+                palette = ['#4c566a','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
+                node_colors = [palette[min(int(cent.get(n, 0) / max_c * 4), 4)] for n in G.nodes]
+                rows = "  ".join(f"<b>{n}:</b>{v:.3f}" for n, v in cent_sorted)
+                result_html = f"<b>Degree centrality:</b><br>{rows}"
+
+            elif prop == "centrality_bet":
+                cent = nx.betweenness_centrality(G, weight='weight', normalized=True)
+                cent_sorted = sorted(cent.items(), key=lambda x: -x[1])
+                max_c = max(cent.values()) if cent else 1
+                palette = ['#4c566a','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
+                node_colors = [palette[min(int(cent.get(n, 0) / max(max_c,1e-9) * 4), 4)] for n in G.nodes]
+                rows = "  ".join(f"<b>{n}:</b>{v:.3f}" for n, v in cent_sorted)
+                result_html = f"<b>Betweenness centrality:</b><br>{rows}"
+
+            self._gt_prop_fig.clear()
+            ax = self._gt_prop_fig.add_subplot(111)
+            self._gt_draw(ax, G, node_colors=node_colors,
+                          title=prop.replace('_', ' ').title())
+            self._gt_prop_fig.tight_layout(pad=0.3)
+            self._gt_prop_canvas.draw()
+            self._gt_prop_out.setHtml(result_html)
+            self._add_to_global_history("GraphTheory", prop, "",
+                                        result_html[:100].replace('<b>','').replace('</b>',''))
+
+        except Exception as e:
+            self._gt_prop_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
 
     def setup_history_tab(self):
         hist_widget = QWidget()
