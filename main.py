@@ -659,14 +659,19 @@ class Karhulaattori(QMainWindow):
             try:
                 eval_expr = full_expr.replace("×", "*").replace("÷", "/")
                 x = sympy.Symbol('x')
-                sym_expr = sympy.sympify(eval_expr)
                 
-                if x in sym_expr.free_symbols:
-                    x_val_str = self.x_value_input.text().strip()
-                    x_val = sympy.sympify(x_val_str)
-                    result_val = sym_expr.subs(x, x_val).evalf()
+                if "=" in eval_expr:
+                    parts = eval_expr.split("=")
+                    sym_expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+                    result_val = sympy.solve(sym_expr, x)
                 else:
-                    result_val = sym_expr.evalf()
+                    sym_expr = sympy.sympify(eval_expr)
+                    if x in sym_expr.free_symbols:
+                        x_val_str = self.x_value_input.text().strip()
+                        x_val = sympy.sympify(x_val_str)
+                        result_val = sym_expr.subs(x, x_val).evalf()
+                    else:
+                        result_val = sym_expr.evalf()
                 
                 formatted_res = self.format_number(result_val)
                 readable_expr = full_expr.replace("*", "×").replace("/", "÷").strip()
@@ -723,20 +728,25 @@ class Karhulaattori(QMainWindow):
             try:
                 eval_expr = full_expr.replace("×", "*").replace("÷", "/")
                 x = sympy.Symbol('x')
-                sym_expr = sympy.sympify(eval_expr)
+                
+                if "=" in eval_expr:
+                    parts = eval_expr.split("=")
+                    sym_expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+                else:
+                    sym_expr = sympy.sympify(eval_expr)
                 
                 if action == "diff":
                     result = sympy.diff(sym_expr, x)
-                    readable_op = f"d/dx({sym_expr})"
+                    readable_op = f"d/dx({eval_expr})"
                 elif action == "integrate":
                     result = sympy.integrate(sym_expr, x)
-                    readable_op = f"∫({sym_expr})dx"
+                    readable_op = f"∫({eval_expr})dx"
                 elif action == "simplify":
                     result = sympy.simplify(sym_expr)
-                    readable_op = f"simplify({sym_expr})"
+                    readable_op = f"simplify({eval_expr})"
                 elif action == "solve":
                     result = sympy.solve(sym_expr, x)
-                    readable_op = f"solve({sym_expr} = 0)"
+                    readable_op = f"solve({eval_expr})"
                     
                 formatted_res = str(result)
                 self.add_history_item(readable_op, formatted_res)
@@ -786,13 +796,65 @@ class Karhulaattori(QMainWindow):
             return
             
         try:
+            # Check for system of equations (separated by commas)
+            if "," in func_str:
+                eqs_strs = func_str.split(",")
+                eqs = []
+                symbols = set()
+                for eq_str in eqs_strs:
+                    eq_str = eq_str.strip()
+                    if not eq_str:
+                        continue
+                    if "=" in eq_str:
+                        parts = eq_str.split("=")
+                        eq = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+                    else:
+                        eq = sympy.sympify(eq_str)
+                    eqs.append(eq)
+                    symbols.update(eq.free_symbols)
+                
+                symbols = sorted(list(symbols), key=lambda s: s.name)
+                output_html = "<b>System of Equations:</b><br>"
+                for eq in eqs:
+                    output_html += f"{eq} = 0<br>"
+                output_html += "<br>"
+                
+                if action == "solve_eq":
+                    sol = sympy.solve(eqs, symbols)
+                    output_html += "<b>Solutions:</b><br>"
+                    if not sol:
+                        output_html += "No solutions found."
+                    else:
+                        if isinstance(sol, dict):
+                            for var, val in sol.items():
+                                output_html += f"{var} = {val}<br>"
+                        elif isinstance(sol, list):
+                            for idx, s in enumerate(sol):
+                                if isinstance(s, tuple):
+                                    term = ", ".join(f"{symbols[i]} = {val}" for i, val in enumerate(s))
+                                    output_html += f"Set {idx+1}: {term}<br>"
+                                else:
+                                    output_html += f"Set {idx+1}: {s}<br>"
+                        else:
+                            output_html += f"{sol}<br>"
+                    self.sym_output.setHtml(output_html)
+                    return
+                else:
+                    raise ValueError("Calculus operations are not supported on systems of equations.")
+
+            # Single equation or expression
             x = sympy.Symbol('x')
-            expr = sympy.sympify(func_str)
-            output_html = f"<b>Function:</b> f(x) = {expr}<br><br>"
+            if "=" in func_str:
+                parts = func_str.split("=")
+                expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+                output_html = f"<b>Equation:</b> {parts[0]} = {parts[1]}<br><br>"
+            else:
+                expr = sympy.sympify(func_str)
+                output_html = f"<b>Function:</b> f(x) = {expr}<br><br>"
             
             if action == "solve_eq":
                 roots = sympy.solve(expr, x)
-                output_html += "<b>Solutions for f(x) = 0:</b><br>"
+                output_html += "<b>Solutions for x:</b><br>"
                 if not roots:
                     output_html += "No analytical roots found."
                 else:
@@ -826,8 +888,17 @@ class Karhulaattori(QMainWindow):
     def plot_function(self):
         func_str = self.f_x_input.text().strip()
         try:
+            # Handle systems of equations or equation plotting
+            if "," in func_str:
+                self.sym_output.setText("Plotting is not supported for systems of equations.")
+                return
+                
             x = sympy.Symbol('x')
-            expr = sympy.sympify(func_str)
+            if "=" in func_str:
+                parts = func_str.split("=")
+                expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+            else:
+                expr = sympy.sympify(func_str)
             
             # Make numeric function via numpy
             f_num = sympy.lambdify(x, expr, "numpy")
