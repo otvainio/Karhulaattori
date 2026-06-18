@@ -222,6 +222,36 @@ QPushButton#toggleSidebarBtn, QPushButton#toggleSciBtn {
 }
 """
 
+class LatexCanvas(FigureCanvas):
+    """Renders a LaTeX string via matplotlib mathtext — no external LaTeX install needed."""
+    def __init__(self, bg='#1e222b', height=100):
+        self._fig = Figure(facecolor=bg)
+        super().__init__(self._fig)
+        self._ax = self._fig.add_axes([0, 0, 1, 1])
+        self._ax.set_axis_off()
+        self._ax.set_facecolor(bg)
+        self._bg = bg
+        self.setFixedHeight(height)
+
+    def render(self, latex_str):
+        self._ax.clear()
+        self._ax.set_axis_off()
+        self._ax.set_facecolor(self._bg)
+        if latex_str:
+            try:
+                self._ax.text(
+                    0.5, 0.5, r"$" + latex_str + r"$",
+                    ha='center', va='center', fontsize=15,
+                    color='#88c0d0', transform=self._ax.transAxes
+                )
+            except Exception:
+                pass
+        try:
+            self._fig.canvas.draw_idle()
+        except Exception:
+            pass
+
+
 class Karhulaattori(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -459,7 +489,11 @@ class Karhulaattori(QMainWindow):
             padding: 8px;
         """)
         ig_layout.addWidget(self.f_x_input)
+        self.sym_input_latex = LatexCanvas(height=80)
+        ig_layout.addWidget(self.sym_input_latex)
+        self.f_x_input.textChanged.connect(self._preview_sym_input)
         left_layout.addWidget(input_group)
+        self._preview_sym_input(self.f_x_input.text())
         
         # Action Grid for solvers
         actions_group = QGroupBox("Symbolic Operators")
@@ -485,20 +519,69 @@ class Karhulaattori(QMainWindow):
             ag_layout.addWidget(btn, row, col)
             
         left_layout.addWidget(actions_group)
+
+        # Polynomial, Trig & Log group
+        extra_group = QGroupBox("Polynomial · Advanced Trig · Logarithms")
+        eg_layout = QGridLayout(extra_group)
+        eg_layout.setSpacing(8)
+
+        extra_ops = [
+            # Polynomial
+            ("Expand",          "expand_poly"),
+            ("Factor",          "factor_poly"),
+            ("Partial Fractions","apart_poly"),
+            ("Collect (x)",     "collect_poly"),
+            # Advanced trig
+            ("Trig Simplify",   "trig_simp"),
+            ("Expand Trig",     "expand_trig"),
+            ("Rewrite → exp",   "rewrite_exp"),
+            ("Rewrite → cos",   "rewrite_cos"),
+            # Logarithms
+            ("Expand log",      "expand_log"),
+            ("Combine log",     "combine_log"),
+            ("Evaluate log(b)", "eval_log"),
+        ]
+
+        for idx, (label, act) in enumerate(extra_ops):
+            btn = QPushButton(label)
+            btn.setStyleSheet(
+                "font-size: 12px; font-weight: bold; "
+                "background-color: #2a3045; color: #88c0d0; min-height: 36px;"
+            )
+            btn.clicked.connect(lambda checked, action=act: self.execute_symbolic_op(action))
+            eg_layout.addWidget(btn, idx // 3, idx % 3)
+
+        # "Evaluate log(b)" needs a base input
+        log_base_row = QHBoxLayout()
+        log_base_row.addWidget(QLabel("log base b:"))
+        self.log_base_input = QLineEdit("10")
+        self.log_base_input.setFixedWidth(55)
+        self.log_base_input.setStyleSheet(
+            "background-color: #2e3440; color: #eceff4; "
+            "border: 1px solid #3b4252; border-radius: 4px; padding: 3px;"
+        )
+        log_base_row.addWidget(self.log_base_input)
+        log_base_row.addStretch()
+        eg_layout.addLayout(log_base_row, (len(extra_ops) // 3) + 1, 0, 1, 3)
+
+        left_layout.addWidget(extra_group)
         
         # Results View
         results_group = QGroupBox("Calculation Output")
         rg_layout = QVBoxLayout(results_group)
         self.sym_output = QTextBrowser()
+        self.sym_output.setMaximumHeight(60)
         self.sym_output.setStyleSheet("""
             background-color: #242933;
             border: 1px solid #2e3440;
             border-radius: 8px;
             color: #a3be8c;
             font-family: 'Consolas', monospace;
-            font-size: 14px;
+            font-size: 13px;
         """)
         rg_layout.addWidget(self.sym_output)
+        self.sym_result_latex = LatexCanvas(height=130)
+        rg_layout.addWidget(self.sym_result_latex)
         left_layout.addWidget(results_group)
         
         layout.addWidget(left_panel, 2)
@@ -664,6 +747,7 @@ class Karhulaattori(QMainWindow):
         out_grp = QGroupBox("Result")
         og_layout = QVBoxLayout(out_grp)
         self.la_output = QTextBrowser()
+        self.la_output.setMaximumHeight(60)
         self.la_output.setStyleSheet("""
             background-color: #242933;
             border: 1px solid #2e3440;
@@ -673,6 +757,8 @@ class Karhulaattori(QMainWindow):
             font-size: 13px;
         """)
         og_layout.addWidget(self.la_output)
+        self.la_result_latex = LatexCanvas(height=130)
+        og_layout.addWidget(self.la_result_latex)
         right_layout.addWidget(out_grp)
         outer.addWidget(right, 2)
 
@@ -691,6 +777,10 @@ class Karhulaattori(QMainWindow):
         parts = [c for c in text.strip().replace(',', ' ').split() if c]
         return sympy.Matrix([sympy.sympify(p) for p in parts])
 
+    def _la_render(self, label_html, latex_str):
+        self.la_output.setHtml(label_html)
+        self.la_result_latex.render(latex_str)
+
     def execute_la_op(self, action):
         try:
             if action in ("det_a", "inv_a", "tra_a", "eig_a", "rank_a", "rref_a"):
@@ -698,37 +788,35 @@ class Karhulaattori(QMainWindow):
 
                 if action == "det_a":
                     result = A.det()
-                    self.la_output.setHtml(f"<b>det(A) =</b><br>{result}")
+                    self._la_render("<b>det(A)</b>", r"\det(A) = " + sympy.latex(result))
 
                 elif action == "inv_a":
                     result = A.inv()
-                    self.la_output.setHtml(f"<b>A⁻¹ =</b><br><pre>{result}</pre>")
+                    self._la_render("<b>A⁻¹</b>", r"A^{-1} = " + sympy.latex(result))
 
                 elif action == "tra_a":
                     result = A.T
-                    self.la_output.setHtml(f"<b>Aᵀ =</b><br><pre>{result}</pre>")
+                    self._la_render("<b>Aᵀ</b>", r"A^T = " + sympy.latex(result))
 
                 elif action == "eig_a":
-                    eigs = A.eigenvals()
                     evecs = A.eigenvects()
-                    html = "<b>Eigenvalues:</b><br>"
-                    for val, mult, _ in evecs:
-                        html += f"λ = {val}  (multiplicity {mult})<br>"
-                    html += "<br><b>Eigenvectors:</b><br>"
-                    for val, mult, vecs in evecs:
-                        for v in vecs:
-                            html += f"λ={val}: {v.T}<br>"
+                    html = "<b>Eigenvalues &amp; vectors</b>"
                     self.la_output.setHtml(html)
+                    parts = [
+                        r"\lambda_{" + str(i+1) + r"} = " + sympy.latex(val)
+                        for i, (val, _, _) in enumerate(evecs)
+                    ]
+                    self.la_result_latex.render(r",\quad ".join(parts))
 
                 elif action == "rank_a":
                     result = A.rank()
-                    self.la_output.setHtml(f"<b>rank(A) =</b> {result}")
+                    self._la_render("<b>rank(A)</b>", r"\mathrm{rank}(A) = " + sympy.latex(result))
 
                 elif action == "rref_a":
                     rref_mat, pivots = A.rref()
-                    self.la_output.setHtml(
-                        f"<b>Row Echelon Form:</b><br><pre>{rref_mat}</pre>"
-                        f"<br><b>Pivot columns:</b> {list(pivots)}"
+                    self._la_render(
+                        f"<b>RREF</b> · pivots: {list(pivots)}",
+                        sympy.latex(rref_mat)
                     )
 
             elif action in ("mat_mul", "mat_add"):
@@ -736,10 +824,10 @@ class Karhulaattori(QMainWindow):
                 B = self._parse_matrix(self.la_mat_b.toPlainText())
                 if action == "mat_mul":
                     result = A * B
-                    self.la_output.setHtml(f"<b>A × B =</b><br><pre>{result}</pre>")
+                    self._la_render("<b>A × B</b>", r"A \times B = " + sympy.latex(result))
                 else:
                     result = A + B
-                    self.la_output.setHtml(f"<b>A + B =</b><br><pre>{result}</pre>")
+                    self._la_render("<b>A + B</b>", r"A + B = " + sympy.latex(result))
 
             else:  # vector ops
                 u = self._parse_vector(self.la_vec_u.text())
@@ -747,36 +835,47 @@ class Karhulaattori(QMainWindow):
 
                 if action == "dot_uv":
                     result = u.dot(v)
-                    self.la_output.setHtml(f"<b>u · v =</b> {result}")
+                    self._la_render("<b>u · v</b>", r"\mathbf{u} \cdot \mathbf{v} = " + sympy.latex(result))
 
                 elif action == "cross_uv":
                     result = u.cross(v)
-                    self.la_output.setHtml(f"<b>u × v =</b><br>{result.T}")
+                    self._la_render("<b>u × v</b>", r"\mathbf{u} \times \mathbf{v} = " + sympy.latex(result.T))
 
                 elif action == "norm_u":
                     result = sympy.sqrt(u.dot(u))
-                    self.la_output.setHtml(f"<b>|u| =</b> {result}")
+                    self._la_render("<b>|u|</b>", r"|\mathbf{u}| = " + sympy.latex(result))
 
                 elif action == "angle_uv":
                     cos_theta = u.dot(v) / (sympy.sqrt(u.dot(u)) * sympy.sqrt(v.dot(v)))
                     angle_rad = sympy.acos(sympy.simplify(cos_theta))
-                    angle_deg = sympy.deg(angle_rad) if hasattr(sympy, 'deg') else sympy.N(angle_rad * 180 / sympy.pi)
-                    self.la_output.setHtml(
-                        f"<b>Angle (rad):</b> {sympy.simplify(angle_rad)}<br>"
-                        f"<b>Angle (°):</b> {sympy.N(angle_rad * 180 / sympy.pi, 5)}"
+                    self._la_render(
+                        f"<b>Angle (°):</b> {sympy.N(angle_rad * 180 / sympy.pi, 5)}",
+                        r"\theta = " + sympy.latex(sympy.simplify(angle_rad))
                     )
 
                 elif action == "vec_add":
                     result = u + v
-                    self.la_output.setHtml(f"<b>u + v =</b><br>{result.T}")
+                    self._la_render("<b>u + v</b>", r"\mathbf{u} + \mathbf{v} = " + sympy.latex(result.T))
 
                 elif action == "proj_uv":
                     proj = (u.dot(v) / v.dot(v)) * v
-                    self.la_output.setHtml(f"<b>proj_v(u) =</b><br>{proj.T}")
+                    self._la_render(
+                        "<b>proj_v(u)</b>",
+                        r"\mathrm{proj}_{\mathbf{v}}(\mathbf{u}) = " + sympy.latex(proj.T)
+                    )
 
         except Exception as e:
-            self.la_output.setHtml(f"<b style='color:#bf616a'>Error:</b><br>{str(e)}")
+            self.la_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.la_result_latex.render("")
 
+
+    def _preview_sym_input(self, text):
+        try:
+            x = sympy.Symbol('x')
+            expr = sympy.sympify(text.replace("=", "-(") + ")" if "=" in text else text)
+            self.sym_input_latex.render(sympy.latex(expr))
+        except Exception:
+            self.sym_input_latex.render("")
 
     def bind_shortcuts(self):
         # Digits & decimal
@@ -1050,114 +1149,143 @@ class Karhulaattori(QMainWindow):
     def execute_symbolic_op(self, action):
         func_str = self.f_x_input.text().strip()
         if not func_str:
-            self.sym_output.setText("Error: Function f(x) is empty.")
+            self.sym_output.setText("Error: empty input.")
             return
-            
+
+        def _set(label, latex_str):
+            self.sym_output.setHtml(f"<b>{label}</b>")
+            self.sym_result_latex.render(latex_str)
+
         try:
             if action == "solve_ode":
                 try:
                     ode_eq, x, y = self._parse_ode(func_str)
                     sol = sympy.dsolve(ode_eq, y(x))
-                    self.sym_output.setHtml(
-                        f"<b>ODE:</b> {func_str}<br><br>"
-                        f"<b>General Solution:</b><br>"
-                        f"<code>{sol}</code>"
-                    )
+                    _set("ODE solution", sympy.latex(sol))
                 except Exception as e:
                     self.sym_output.setHtml(
-                        f"<b>ODE solving failed:</b><br>{str(e)}<br><br>"
-                        f"<i>Tip: Write equations like <code>y'' + y = 0</code> or <code>y' = y</code></i>"
+                        f"<b>ODE failed:</b> {str(e)}<br>"
+                        f"<i>e.g. y'' + y = 0</i>"
                     )
+                    self.sym_result_latex.render("")
                 return
 
-            # Check for system of equations (separated by commas)
             if "," in func_str:
                 eqs_strs = func_str.split(",")
-                eqs = []
-                symbols = set()
+                eqs, syms = [], set()
                 for eq_str in eqs_strs:
                     eq_str = eq_str.strip()
                     if not eq_str:
                         continue
                     if "=" in eq_str:
-                        parts = eq_str.split("=")
-                        eq = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+                        p = eq_str.split("=")
+                        eq = sympy.sympify(p[0]) - sympy.sympify(p[1])
                     else:
                         eq = sympy.sympify(eq_str)
                     eqs.append(eq)
-                    symbols.update(eq.free_symbols)
-                
-                symbols = sorted(list(symbols), key=lambda s: s.name)
-                output_html = "<b>System of Equations:</b><br>"
-                for eq in eqs:
-                    output_html += f"{eq} = 0<br>"
-                output_html += "<br>"
-                
+                    syms.update(eq.free_symbols)
+                syms = sorted(list(syms), key=lambda s: s.name)
                 if action == "solve_eq":
-                    sol = sympy.solve(eqs, symbols)
-                    output_html += "<b>Solutions:</b><br>"
-                    if not sol:
-                        output_html += "No solutions found."
+                    sol = sympy.solve(eqs, syms)
+                    if isinstance(sol, dict):
+                        latex_str = r",\quad ".join(
+                            f"{sympy.latex(k)} = {sympy.latex(v)}" for k, v in sol.items()
+                        )
                     else:
-                        if isinstance(sol, dict):
-                            for var, val in sol.items():
-                                output_html += f"{var} = {val}<br>"
-                        elif isinstance(sol, list):
-                            for idx, s in enumerate(sol):
-                                if isinstance(s, tuple):
-                                    term = ", ".join(f"{symbols[i]} = {val}" for i, val in enumerate(s))
-                                    output_html += f"Set {idx+1}: {term}<br>"
-                                else:
-                                    output_html += f"Set {idx+1}: {s}<br>"
-                        else:
-                            output_html += f"{sol}<br>"
-                    self.sym_output.setHtml(output_html)
-                    return
+                        latex_str = sympy.latex(sol)
+                    _set("System solution", latex_str)
                 else:
-                    raise ValueError("Calculus operations are not supported on systems of equations.")
+                    raise ValueError("Calculus ops not supported on systems.")
+                return
 
-            # Single equation or expression
             x = sympy.Symbol('x')
             if "=" in func_str:
-                parts = func_str.split("=")
-                expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
-                output_html = f"<b>Equation:</b> {parts[0]} = {parts[1]}<br><br>"
+                p = func_str.split("=")
+                expr = sympy.sympify(p[0]) - sympy.sympify(p[1])
             else:
                 expr = sympy.sympify(func_str)
-                output_html = f"<b>Function:</b> f(x) = {expr}<br><br>"
-            
+
             if action == "solve_eq":
                 roots = sympy.solve(expr, x)
-                output_html += "<b>Solutions for x:</b><br>"
                 if not roots:
-                    output_html += "No analytical roots found."
+                    _set("No analytical roots found.", "")
                 else:
-                    for i, root in enumerate(roots):
-                        output_html += f"x<sub>{i+1}</sub> = {root}<br>"
-                        
+                    latex_str = r",\quad ".join(
+                        f"x_{{{i+1}}} = {sympy.latex(r)}" for i, r in enumerate(roots)
+                    )
+                    _set("Roots", latex_str)
+
             elif action == "derive_eq":
-                deriv = sympy.diff(expr, x)
-                output_html += f"<b>Derivative f'(x):</b><br>{deriv}"
-                
+                res = sympy.diff(expr, x)
+                _set("Derivative", r"f'(x) = " + sympy.latex(res))
+
             elif action == "integrate_eq":
-                integral = sympy.integrate(expr, x)
-                output_html += f"<b>Indefinite Integral ∫f(x)dx:</b><br>{integral} + C"
-                
+                res = sympy.integrate(expr, x)
+                _set("Integral", sympy.latex(res) + r" + C")
+
             elif action == "simplify_eq":
-                simp = sympy.simplify(expr)
-                output_html += f"<b>Simplified Formula:</b><br>{simp}"
-                
+                res = sympy.simplify(expr)
+                _set("Simplified", sympy.latex(res))
+
             elif action == "limit_0":
-                lim = sympy.limit(expr, x, 0)
-                output_html += f"<b>Limit as x → 0:</b><br>{lim}"
-                
+                res = sympy.limit(expr, x, 0)
+                _set("Limit", r"\lim_{x \to 0} f(x) = " + sympy.latex(res))
+
             elif action == "taylor_eq":
-                series = sympy.series(expr, x, 0, 5)
-                output_html += f"<b>Taylor Series (x=0, up to O(x^5)):</b><br>{series}"
-                
-            self.sym_output.setHtml(output_html)
+                res = sympy.series(expr, x, 0, 5)
+                _set("Taylor series", sympy.latex(res))
+
+            elif action == "expand_poly":
+                res = sympy.expand(expr)
+                _set("Expanded", sympy.latex(res))
+
+            elif action == "factor_poly":
+                res = sympy.factor(expr)
+                _set("Factored", sympy.latex(res))
+
+            elif action == "apart_poly":
+                res = sympy.apart(expr, x)
+                _set("Partial fractions", sympy.latex(res))
+
+            elif action == "collect_poly":
+                res = sympy.collect(sympy.expand(expr), x)
+                _set("Collected", sympy.latex(res))
+
+            elif action == "trig_simp":
+                res = sympy.trigsimp(expr)
+                _set("Trig simplified", sympy.latex(res))
+
+            elif action == "expand_trig":
+                res = sympy.expand_trig(expr)
+                _set("Expanded trig", sympy.latex(res))
+
+            elif action == "rewrite_exp":
+                res = sympy.simplify(expr.rewrite(sympy.exp))
+                _set("In terms of exp", sympy.latex(res))
+
+            elif action == "rewrite_cos":
+                res = sympy.simplify(expr.rewrite(sympy.cos))
+                _set("In terms of cos/sin", sympy.latex(res))
+
+            elif action == "expand_log":
+                res = sympy.expand_log(expr, force=True)
+                _set("Expanded log", sympy.latex(res))
+
+            elif action == "combine_log":
+                res = sympy.logcombine(expr, force=True)
+                _set("Combined logs", sympy.latex(res))
+
+            elif action == "eval_log":
+                try:
+                    b = sympy.sympify(self.log_base_input.text())
+                except Exception:
+                    b = sympy.Integer(10)
+                res = sympy.simplify(sympy.log(expr) / sympy.log(b))
+                _set(f"log base {b}", r"\log_{" + sympy.latex(b) + r"} f(x) = " + sympy.latex(res))
+
         except Exception as e:
-            self.sym_output.setText(f"Error executing operation:\n{str(e)}")
+            self.sym_output.setText(f"Error: {str(e)}")
+            self.sym_result_latex.render("")
 
     def plot_function(self):
         func_str = self.f_x_input.text().strip()
@@ -1320,7 +1448,7 @@ class Karhulaattori(QMainWindow):
         out_grp = QGroupBox("Result")
         ogl = QVBoxLayout(out_grp)
         self.cx_output = QTextBrowser()
-        self.cx_output.setMaximumHeight(160)
+        self.cx_output.setMaximumHeight(60)
         self.cx_output.setStyleSheet("""
             background-color: #242933;
             border: 1px solid #2e3440;
@@ -1330,6 +1458,8 @@ class Karhulaattori(QMainWindow):
             font-size: 13px;
         """)
         ogl.addWidget(self.cx_output)
+        self.cx_result_latex = LatexCanvas(height=120)
+        ogl.addWidget(self.cx_result_latex)
         right_layout.addWidget(out_grp)
 
         # Argand plane (canvas)
@@ -1394,87 +1524,78 @@ class Karhulaattori(QMainWindow):
             self.cx_output.setHtml(f"<b style='color:#bf616a'>Plot Error:</b> {e}")
 
     def execute_complex_op(self, action):
+        def _cx_latex(z):
+            z = sympy.simplify(z)
+            re = sympy.nsimplify(sympy.re(z), rational=False)
+            im = sympy.nsimplify(sympy.im(z), rational=False)
+            return sympy.latex(re) + " + " + sympy.latex(im) + r"i"
+
+        def _set(label, latex_str):
+            self.cx_output.setHtml(f"<b>{label}</b>")
+            self.cx_result_latex.render(latex_str)
+
         try:
             z1 = sympy.sympify(self.cx_z1.text())
             z2 = sympy.sympify(self.cx_z2.text())
 
-            def fmt(z):
-                z = sympy.simplify(z)
-                re = sympy.re(z)
-                im = sympy.im(z)
-                return f"{sympy.nsimplify(re, rational=False)} + {sympy.nsimplify(im, rational=False)}*I"
-
-            def polar_str(z):
-                z = sympy.simplify(z)
-                r = sympy.Abs(z)
-                theta = sympy.arg(z)
-                r_s = sympy.nsimplify(r, rational=False)
-                t_s = sympy.nsimplify(theta, rational=False)
-                return (f"r = {r_s}   (≈ {float(r):.5g})<br>"
-                        f"θ = {t_s}   (≈ {float(theta):.5g} rad,  "
-                        f"{float(theta)*180/3.14159265:.4g}°)<br>"
-                        f"Euler form: {r_s} · e^(i·{t_s})")
-
             if action == "cx_add":
-                r = z1 + z2
-                self.cx_output.setHtml(f"<b>z₁ + z₂ =</b><br>{fmt(r)}")
+                _set("z₁ + z₂", r"z_1 + z_2 = " + _cx_latex(z1 + z2))
             elif action == "cx_sub":
-                r = z1 - z2
-                self.cx_output.setHtml(f"<b>z₁ − z₂ =</b><br>{fmt(r)}")
+                _set("z₁ − z₂", r"z_1 - z_2 = " + _cx_latex(z1 - z2))
             elif action == "cx_mul":
-                r = z1 * z2
-                self.cx_output.setHtml(f"<b>z₁ × z₂ =</b><br>{fmt(r)}")
+                _set("z₁ × z₂", r"z_1 \cdot z_2 = " + _cx_latex(z1 * z2))
             elif action == "cx_div":
-                r = z1 / z2
-                self.cx_output.setHtml(f"<b>z₁ / z₂ =</b><br>{fmt(r)}")
+                _set("z₁ / z₂", r"\frac{z_1}{z_2} = " + _cx_latex(z1 / z2))
             elif action == "cx_mod":
                 r = sympy.Abs(z1)
-                self.cx_output.setHtml(f"<b>|z₁| =</b> {sympy.nsimplify(r)}   (≈ {float(r):.6g})")
+                _set(f"|z₁| ≈ {float(r):.6g}", r"|z_1| = " + sympy.latex(sympy.nsimplify(r, rational=False)))
             elif action == "cx_arg":
                 r = sympy.arg(z1)
-                self.cx_output.setHtml(
-                    f"<b>arg(z₁) =</b><br>"
-                    f"{sympy.nsimplify(r, rational=False)}   (≈ {float(r):.6g} rad,  "
-                    f"{float(r)*180/3.14159265:.5g}°)"
+                _set(
+                    f"arg(z₁) ≈ {float(r):.4g} rad  ({float(r)*180/3.14159265:.4g}°)",
+                    r"\arg(z_1) = " + sympy.latex(sympy.nsimplify(r, rational=False))
                 )
             elif action == "cx_conj":
-                r = sympy.conjugate(z1)
-                self.cx_output.setHtml(f"<b>conj(z₁) =</b><br>{fmt(r)}")
+                _set("conj(z₁)", r"\overline{z_1} = " + _cx_latex(sympy.conjugate(z1)))
             elif action == "cx_pow":
                 n = sympy.sympify(self.cx_n.text())
                 r = z1 ** n
                 mod = sympy.Abs(z1) ** n
                 theta_n = n * sympy.arg(z1)
-                self.cx_output.setHtml(
-                    f"<b>z₁ⁿ  (n = {n}) =</b><br>{fmt(r)}<br><br>"
-                    f"<b>De Moivre:</b><br>|z₁|ⁿ = {sympy.nsimplify(mod)}<br>"
-                    f"n·arg(z₁) = {sympy.nsimplify(theta_n, rational=False)} rad"
+                _set(
+                    f"z₁ⁿ  (n = {n})",
+                    r"z_1^{" + sympy.latex(n) + r"} = " + _cx_latex(r)
                 )
             elif action == "cx_polar":
-                self.cx_output.setHtml(f"<b>Polar form of z₁:</b><br>{polar_str(z1)}")
+                z1s = sympy.simplify(z1)
+                r_val = sympy.nsimplify(sympy.Abs(z1s), rational=False)
+                theta_val = sympy.nsimplify(sympy.arg(z1s), rational=False)
+                _set(
+                    "Polar form",
+                    sympy.latex(r_val) + r" \, e^{i \cdot " + sympy.latex(theta_val) + r"}"
+                )
             elif action == "cx_euler":
                 theta = sympy.sympify(self.cx_theta.text())
                 r_val = sympy.sympify(self.cx_r.text())
-                e_form = r_val * sympy.exp(sympy.I * theta)
-                expanded = sympy.expand(e_form.rewrite(sympy.cos))
-                self.cx_output.setHtml(
-                    f"<b>Euler's formula:</b><br>"
-                    f"{r_val} · e^(i·{theta})<br><br>"
-                    f"= {r_val} · (cos({theta}) + i·sin({theta}))<br><br>"
-                    f"= {sympy.simplify(expanded)}"
+                expanded = sympy.simplify(sympy.expand((r_val * sympy.exp(sympy.I * theta)).rewrite(sympy.cos)))
+                _set(
+                    "Euler's formula",
+                    sympy.latex(r_val) + r" e^{i " + sympy.latex(theta) + r"} = " + sympy.latex(expanded)
                 )
             elif action == "cx_parts":
-                self.cx_output.setHtml(
-                    f"<b>z₁ = {fmt(z1)}</b><br><br>"
-                    f"Re(z₁) = {sympy.nsimplify(sympy.re(z1))}<br>"
-                    f"Im(z₁) = {sympy.nsimplify(sympy.im(z1))}"
+                re_v = sympy.nsimplify(sympy.re(z1))
+                im_v = sympy.nsimplify(sympy.im(z1))
+                _set(
+                    "Re / Im parts",
+                    r"\operatorname{Re}(z_1) = " + sympy.latex(re_v) +
+                    r",\quad \operatorname{Im}(z_1) = " + sympy.latex(im_v)
                 )
             elif action == "cx_sq":
-                r = z1 ** 2
-                self.cx_output.setHtml(f"<b>z₁² =</b><br>{fmt(r)}")
+                _set("z₁²", r"z_1^2 = " + _cx_latex(z1 ** 2))
 
         except Exception as e:
-            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b><br>{str(e)}")
+            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.cx_result_latex.render("")
 
 
 if __name__ == "__main__":
