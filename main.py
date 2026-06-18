@@ -231,9 +231,11 @@ class LatexCanvas(FigureCanvas):
         self._ax.set_axis_off()
         self._ax.set_facecolor(bg)
         self._bg = bg
+        self._current_latex = ""
         self.setFixedHeight(height)
 
     def render(self, latex_str):
+        self._current_latex = latex_str
         self._ax.clear()
         self._ax.set_axis_off()
         self._ax.set_facecolor(self._bg)
@@ -287,6 +289,17 @@ class Karhulaattori(QMainWindow):
 
     def apply_styles(self):
         self.setStyleSheet(QSS_STYLESHEET)
+
+    def _copy_latex_btn(self, canvas):
+        btn = QPushButton("Copy LaTeX")
+        btn.setStyleSheet(
+            "font-size: 11px; min-height: 22px; max-height: 24px; "
+            "background-color: #2e3440; color: #81a1c1; "
+            "border: 1px solid #3b4252; border-radius: 4px; padding: 0 8px;"
+        )
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.clicked.connect(lambda: QApplication.clipboard().setText(canvas._current_latex))
+        return btn
 
     def setup_calculator_tab(self):
         calc_widget = QWidget()
@@ -491,6 +504,7 @@ class Karhulaattori(QMainWindow):
         ig_layout.addWidget(self.f_x_input)
         self.sym_input_latex = LatexCanvas(height=80)
         ig_layout.addWidget(self.sym_input_latex)
+        ig_layout.addWidget(self._copy_latex_btn(self.sym_input_latex), alignment=Qt.AlignmentFlag.AlignRight)
         self.f_x_input.textChanged.connect(self._preview_sym_input)
         left_layout.addWidget(input_group)
         self._preview_sym_input(self.f_x_input.text())
@@ -539,7 +553,6 @@ class Karhulaattori(QMainWindow):
             # Logarithms
             ("Expand log",      "expand_log"),
             ("Combine log",     "combine_log"),
-            ("Evaluate log(b)", "eval_log"),
         ]
 
         for idx, (label, act) in enumerate(extra_ops):
@@ -551,18 +564,30 @@ class Karhulaattori(QMainWindow):
             btn.clicked.connect(lambda checked, action=act: self.execute_symbolic_op(action))
             eg_layout.addWidget(btn, idx // 3, idx % 3)
 
-        # "Evaluate log(b)" needs a base input
-        log_base_row = QHBoxLayout()
-        log_base_row.addWidget(QLabel("log base b:"))
+        # "Evaluate log(b)" — log base input inline with the button
+        log_eval_widget = QWidget()
+        log_eval_layout = QHBoxLayout(log_eval_widget)
+        log_eval_layout.setContentsMargins(0, 0, 0, 0)
+        log_eval_layout.setSpacing(6)
+        log_base_label = QLabel("log base b:")
+        log_base_label.setStyleSheet("color: #88c0d0; font-size: 12px;")
+        log_eval_layout.addWidget(log_base_label)
         self.log_base_input = QLineEdit("10")
-        self.log_base_input.setFixedWidth(55)
+        self.log_base_input.setFixedWidth(50)
         self.log_base_input.setStyleSheet(
             "background-color: #2e3440; color: #eceff4; "
             "border: 1px solid #3b4252; border-radius: 4px; padding: 3px;"
         )
-        log_base_row.addWidget(self.log_base_input)
-        log_base_row.addStretch()
-        eg_layout.addLayout(log_base_row, (len(extra_ops) // 3) + 1, 0, 1, 3)
+        log_eval_layout.addWidget(self.log_base_input)
+        eval_log_btn = QPushButton("Evaluate log(b)")
+        eval_log_btn.setStyleSheet(
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2a3045; color: #88c0d0; min-height: 36px;"
+        )
+        eval_log_btn.clicked.connect(lambda: self.execute_symbolic_op("eval_log"))
+        log_eval_layout.addWidget(eval_log_btn)
+        next_row = (len(extra_ops) - 1) // 3 + 1
+        eg_layout.addWidget(log_eval_widget, next_row, 0, 1, 3)
 
         left_layout.addWidget(extra_group)
         
@@ -582,53 +607,104 @@ class Karhulaattori(QMainWindow):
         rg_layout.addWidget(self.sym_output)
         self.sym_result_latex = LatexCanvas(height=130)
         rg_layout.addWidget(self.sym_result_latex)
+        rg_layout.addWidget(self._copy_latex_btn(self.sym_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
         left_layout.addWidget(results_group)
         
         layout.addWidget(left_panel, 2)
-        
+
         # Right Column - Visual Plot Area
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        
+        right_layout.setSpacing(8)
+
         plot_group = QGroupBox("Interactive Graph")
         pg_layout = QVBoxLayout(plot_group)
-        
-        # Matplotlib Canvas Setup
+
+        # Multi-function input
+        func_label = QLabel("Functions to plot — one per line. Explicit: x**2+1  or  y=x**2  |  Implicit: x**2+y**2=25")
+        func_label.setStyleSheet("color: #81a1c1; font-size: 11px;")
+        func_label.setWordWrap(True)
+        pg_layout.addWidget(func_label)
+
+        self.plot_functions_input = QTextEdit("x**2 - 3*x + 2")
+        self.plot_functions_input.setFixedHeight(62)
+        self.plot_functions_input.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #3b4252;
+            border-radius: 6px;
+            color: #eceff4;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            padding: 4px;
+        """)
+        pg_layout.addWidget(self.plot_functions_input)
+
+        # Matplotlib Canvas
         self.canvas = FigureCanvas(Figure(facecolor='#1e222b'))
         self.ax = self.canvas.figure.subplots()
         self.ax.set_facecolor('#242933')
         self.ax.tick_params(colors='#eceff4')
         self.ax.grid(color='#2e3440', linestyle='--')
-        
         pg_layout.addWidget(self.canvas)
-        
-        # Plot Range Options & Button
+        self._setup_graph_interaction()
+
+        # Plot Range & Button
         control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("Range x from:"))
+        control_layout.addWidget(QLabel("x from:"))
         self.x_min_input = QLineEdit("-10")
         self.x_min_input.setFixedWidth(50)
         self.x_min_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
         control_layout.addWidget(self.x_min_input)
-        
         control_layout.addWidget(QLabel("to:"))
         self.x_max_input = QLineEdit("10")
         self.x_max_input.setFixedWidth(50)
         self.x_max_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
         control_layout.addWidget(self.x_max_input)
-        
+        control_layout.addWidget(QLabel("  y from:"))
+        self.y_min_input = QLineEdit("-10")
+        self.y_min_input.setFixedWidth(50)
+        self.y_min_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
+        control_layout.addWidget(self.y_min_input)
+        control_layout.addWidget(QLabel("to:"))
+        self.y_max_input = QLineEdit("10")
+        self.y_max_input.setFixedWidth(50)
+        self.y_max_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
+        control_layout.addWidget(self.y_max_input)
         control_layout.addStretch()
-        
-        self.plot_btn = QPushButton("Plot Function")
-        self.plot_btn.setStyleSheet("background-color: #88c0d0; color: #2e3440; font-weight: bold; min-height: 35px; min-width: 120px;")
+        reset_view_btn = QPushButton("Reset View")
+        reset_view_btn.setStyleSheet("background-color: #3b4252; color: #81a1c1; font-size: 12px; min-height: 35px; min-width: 85px;")
+        reset_view_btn.clicked.connect(self._reset_graph_view)
+        control_layout.addWidget(reset_view_btn)
+        clear_graph_btn = QPushButton("Clear")
+        clear_graph_btn.setStyleSheet("background-color: #3b4252; color: #bf616a; font-weight: bold; min-height: 35px; min-width: 65px;")
+        clear_graph_btn.clicked.connect(self._clear_graph)
+        control_layout.addWidget(clear_graph_btn)
+        self.plot_btn = QPushButton("Plot")
+        self.plot_btn.setStyleSheet("background-color: #88c0d0; color: #2e3440; font-weight: bold; min-height: 35px; min-width: 80px;")
         self.plot_btn.clicked.connect(self.plot_function)
         control_layout.addWidget(self.plot_btn)
-        
         pg_layout.addLayout(control_layout)
         right_layout.addWidget(plot_group)
-        
+
+        # Intercepts & Intersections output
+        intercepts_grp = QGroupBox("Intercepts & Intersections")
+        igl = QVBoxLayout(intercepts_grp)
+        self.intercepts_output = QTextBrowser()
+        self.intercepts_output.setFixedHeight(80)
+        self.intercepts_output.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #2e3440;
+            border-radius: 8px;
+            color: #eceff4;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+        """)
+        igl.addWidget(self.intercepts_output)
+        right_layout.addWidget(intercepts_grp)
+
         layout.addWidget(right_panel, 3)
-        
+
         # Initial Plot
         self.plot_function()
 
@@ -759,6 +835,7 @@ class Karhulaattori(QMainWindow):
         og_layout.addWidget(self.la_output)
         self.la_result_latex = LatexCanvas(height=130)
         og_layout.addWidget(self.la_result_latex)
+        og_layout.addWidget(self._copy_latex_btn(self.la_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(out_grp)
         outer.addWidget(right, 2)
 
@@ -1287,62 +1364,443 @@ class Karhulaattori(QMainWindow):
             self.sym_output.setText(f"Error: {str(e)}")
             self.sym_result_latex.render("")
 
-    def plot_function(self):
-        func_str = self.f_x_input.text().strip()
+    def _eval_expr(self, expr, x_vals):
+        """Vectorized evaluation of a sympy expression over a numpy x array."""
+        x = sympy.Symbol('x')
+        f = sympy.lambdify(x, expr, modules=['numpy'])
+        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+            raw = f(x_vals)
+        raw_arr = np.asarray(raw)
+        # broadcast scalar (constant functions) to full length
+        if raw_arr.ndim == 0:
+            raw_arr = np.full(x_vals.shape, float(raw_arr.real if hasattr(raw_arr, 'real') else raw_arr))
+            return raw_arr
+        if raw_arr.shape != x_vals.shape:
+            return np.full(x_vals.shape, np.nan)
         try:
-            # Handle systems of equations or equation plotting
-            if "," in func_str:
-                self.sym_output.setText("Plotting is not supported for systems of equations.")
+            comp = raw_arr.astype(complex)
+            result = np.where(np.abs(comp.imag) < 1e-9 * (1 + np.abs(comp.real)),
+                              comp.real, np.nan).astype(float)
+        except Exception:
+            try:
+                result = raw_arr.astype(float)
+            except Exception:
+                return np.full(x_vals.shape, np.nan)
+        result[~np.isfinite(result)] = np.nan
+        return result
+
+    def _reset_graph_view(self):
+        self.x_min_input.setText("-10")
+        self.x_max_input.setText("10")
+        self.y_min_input.setText("-10")
+        self.y_max_input.setText("10")
+        self.plot_function()
+
+    def _clear_graph(self):
+        self.plot_functions_input.clear()
+        self.ax.clear()
+        self.ax.set_facecolor('#242933')
+        self.ax.tick_params(colors='#eceff4')
+        for sp in self.ax.spines.values():
+            sp.set_edgecolor('#4c566a')
+        self.ax.grid(color='#2e3440', linestyle='--', alpha=0.6)
+        self.ax.axhline(0, color='#4c566a', linewidth=1.0)
+        self.ax.axvline(0, color='#4c566a', linewidth=1.0)
+        self.canvas.draw()
+        self.intercepts_output.setHtml('')
+
+    def _setup_graph_interaction(self):
+        """Attach pan (left-drag) and zoom (scroll wheel) to the main graph canvas."""
+        self._graph_pan_start = None
+        self._graph_pan_limits = None
+
+        def _sync_range_inputs():
+            xl = self.ax.get_xlim()
+            yl = self.ax.get_ylim()
+            self.x_min_input.setText(f"{xl[0]:.4g}")
+            self.x_max_input.setText(f"{xl[1]:.4g}")
+            self.y_min_input.setText(f"{yl[0]:.4g}")
+            self.y_max_input.setText(f"{yl[1]:.4g}")
+
+        def on_press(event):
+            if event.button == 1 and event.inaxes == self.ax:
+                self._graph_pan_start = (event.x, event.y)
+                self._graph_pan_limits = (list(self.ax.get_xlim()), list(self.ax.get_ylim()))
+                self.canvas.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+        def on_motion(event):
+            if self._graph_pan_start is None:
                 return
-                
-            x = sympy.Symbol('x')
-            if "=" in func_str:
-                parts = func_str.split("=")
-                expr = sympy.sympify(parts[0]) - sympy.sympify(parts[1])
+            px0, py0 = self._graph_pan_start
+            xlim0, ylim0 = self._graph_pan_limits
+            bbox = self.ax.get_window_extent()
+            if bbox.width == 0 or bbox.height == 0:
+                return
+            dx = -(event.x - px0) * (xlim0[1] - xlim0[0]) / bbox.width
+            dy = -(event.y - py0) * (ylim0[1] - ylim0[0]) / bbox.height
+            self.ax.set_xlim(xlim0[0] + dx, xlim0[1] + dx)
+            self.ax.set_ylim(ylim0[0] + dy, ylim0[1] + dy)
+            self.canvas.draw_idle()
+
+        def on_release(event):
+            if self._graph_pan_start is not None:
+                self._graph_pan_start = None
+                self._graph_pan_limits = None
+                _sync_range_inputs()
+            self.canvas.setCursor(Qt.CursorShape.OpenHandCursor)
+
+        def on_scroll(event):
+            if event.inaxes != self.ax or event.xdata is None:
+                return
+            factor = 0.85 if event.button == 'up' else 1.0 / 0.85
+            cx, cy = event.xdata, event.ydata
+            self.ax.set_xlim([cx + (x - cx) * factor for x in self.ax.get_xlim()])
+            self.ax.set_ylim([cy + (y - cy) * factor for y in self.ax.get_ylim()])
+            _sync_range_inputs()
+            self.canvas.draw_idle()
+
+        def on_enter_axes(event):
+            if event.inaxes == self.ax:
+                self.canvas.setCursor(Qt.CursorShape.OpenHandCursor)
+
+        def on_leave_axes(event):
+            if self._graph_pan_start is None:
+                self.canvas.setCursor(Qt.CursorShape.ArrowCursor)
+
+        self.canvas.mpl_connect('button_press_event', on_press)
+        self.canvas.mpl_connect('motion_notify_event', on_motion)
+        self.canvas.mpl_connect('button_release_event', on_release)
+        self.canvas.mpl_connect('scroll_event', on_scroll)
+        self.canvas.mpl_connect('axes_enter_event', on_enter_axes)
+        self.canvas.mpl_connect('axes_leave_event', on_leave_axes)
+
+    def _parse_plot_entry(self, entry):
+        """Parse a plot entry line. Returns (kind, data, label) or None.
+        kind: 'explicit' | 'implicit' | 'vertical'
+        """
+        x, y = sympy.Symbol('x'), sympy.Symbol('y')
+        entry = entry.strip()
+        if not entry or entry.startswith('#'):
+            return None
+        try:
+            if '=' in entry:
+                lhs_str, rhs_str = entry.split('=', 1)
+                lhs = sympy.sympify(lhs_str.strip())
+                rhs = sympy.sympify(rhs_str.strip())
+                implicit_expr = lhs - rhs
+                if lhs == y and y not in rhs.free_symbols:
+                    return ('explicit', rhs, entry)
+                if lhs == x and y not in implicit_expr.free_symbols and x not in rhs.free_symbols:
+                    try:
+                        return ('vertical', float(rhs.evalf()), entry)
+                    except Exception:
+                        pass
+                return ('implicit', implicit_expr, entry)
             else:
-                expr = sympy.sympify(func_str)
-            
-            # Make numeric function via numpy
-            f_num = sympy.lambdify(x, expr, "numpy")
-            
+                expr = sympy.sympify(entry)
+                if y in expr.free_symbols:
+                    return ('implicit', expr, entry)
+                return ('explicit', expr, entry)
+        except Exception:
+            return None
+
+    def plot_function(self):
+        raw = self.plot_functions_input.toPlainText()
+        entries = [l.strip() for l in raw.splitlines() if l.strip() and not l.strip().startswith('#')]
+        if not entries:
+            return
+
+        x_sym = sympy.Symbol('x')
+        y_sym = sympy.Symbol('y')
+        try:
             x_min = float(self.x_min_input.text())
             x_max = float(self.x_max_input.text())
-            
-            # Draw values
-            x_vals = np.linspace(x_min, x_max, 400)
-            
-            # Wrap function execution to avoid crash on division-by-zero or complex numbers
-            y_vals = []
-            for val in x_vals:
+        except ValueError:
+            x_min, x_max = -10.0, 10.0
+        try:
+            y_min = float(self.y_min_input.text())
+            y_max = float(self.y_max_input.text())
+        except ValueError:
+            y_min, y_max = -10.0, 10.0
+
+        x_vals = np.linspace(x_min, x_max, 800)
+        COLORS = ['#88c0d0', '#a3be8c', '#bf616a', '#ebcb8b', '#b48ead', '#d08770']
+
+        self.ax.clear()
+        self.ax.set_facecolor('#242933')
+        self.ax.tick_params(colors='#eceff4')
+        for sp in self.ax.spines.values():
+            sp.set_edgecolor('#4c566a')
+        self.ax.grid(color='#2e3440', linestyle='--', alpha=0.6)
+        self.ax.axhline(0, color='#4c566a', linewidth=1.0)
+        self.ax.axvline(0, color='#4c566a', linewidth=1.0)
+
+        explicit_list = []   # (label, expr, color, y_arr)
+        implicit_list = []   # (label, expr, color)
+        intercept_parts = []
+
+        for i, entry in enumerate(entries):
+            parsed = self._parse_plot_entry(entry)
+            if parsed is None:
+                intercept_parts.append(f'<span style="color:#bf616a">Cannot parse: {entry}</span>')
+                continue
+            color = COLORS[i % len(COLORS)]
+            kind, data, label = parsed
+
+            if kind == 'explicit':
+                expr = data
+                # ── evaluate ─────────────────────────────────────────────
                 try:
-                    res = f_num(val)
-                    if isinstance(res, complex) or np.isnan(res) or np.isinf(res):
-                        y_vals.append(None)
-                    else:
-                        y_vals.append(float(res))
+                    y_arr = self._eval_expr(expr, x_vals)
+                except Exception as e:
+                    intercept_parts.append(f'<span style="color:#bf616a">Eval error [{label}]: {e}</span>')
+                    continue
+
+                self.ax.plot(x_vals, y_arr, color=color, linewidth=2.5,
+                             label=label, solid_capstyle='round')
+                explicit_list.append((label, expr, color, y_arr))
+
+                # ── x-intercepts ──────────────────────────────────────────
+                x_roots = []
+                try:
+                    sym_roots = sympy.solve(expr, x_sym)
+                    for r in sym_roots:
+                        try:
+                            if r.is_real:
+                                rx = float(r)
+                                if x_min <= rx <= x_max:
+                                    x_roots.append(rx)
+                        except Exception:
+                            pass
                 except Exception:
-                    y_vals.append(None)
-                    
-            y_vals = np.array(y_vals, dtype=float)
-            
-            # Redraw canvas
-            self.ax.clear()
-            self.ax.set_facecolor('#242933')
-            self.ax.grid(color='#2e3440', linestyle='--')
-            
-            # Plot the line
-            self.ax.plot(x_vals, y_vals, color='#88c0d0', linewidth=2.5, label=f"y = {expr}")
-            
-            # Draw horizontal/vertical zero lines
-            self.ax.axhline(0, color='#3b4252', linewidth=1.2)
-            self.ax.axvline(0, color='#3b4252', linewidth=1.2)
-            
-            self.ax.legend(facecolor='#1e222b', edgecolor='#2e3440', labelcolor='#eceff4')
-            self.ax.tick_params(colors='#eceff4')
-            
-            self.canvas.draw()
-        except Exception as e:
-            self.sym_output.setText(f"Plotting Error:\n{str(e)}")
+                    pass
+                # numerical sign-change fallback
+                if not x_roots:
+                    mask = np.isfinite(y_arr)
+                    if mask.sum() > 1:
+                        yf, xf = y_arr[mask], x_vals[mask]
+                        for si in np.where(np.diff(np.sign(yf)))[0]:
+                            d = yf[si+1] - yf[si]
+                            if d != 0:
+                                x_roots.append(xf[si] - yf[si] * (xf[si+1] - xf[si]) / d)
+
+                for rx in x_roots:
+                    self.ax.plot(rx, 0, 'o', color=color, markersize=9, zorder=6,
+                                 markeredgecolor='#eceff4', markeredgewidth=1)
+                    self.ax.annotate(f'({rx:.4g}, 0)', (rx, 0),
+                                     textcoords='offset points', xytext=(5, 8),
+                                     color='#eceff4', fontsize=8,
+                                     bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                if x_roots:
+                    intercept_parts.append(
+                        f'<span style="color:{color}">●</span> <b>{label}</b>'
+                        f'  x-int: ' + ', '.join(f'({rx:.4g}, 0)' for rx in x_roots)
+                    )
+
+                # ── y-intercept ───────────────────────────────────────────
+                try:
+                    y0c = complex(expr.subs(x_sym, 0).evalf())
+                    if abs(y0c.imag) < 1e-10 and np.isfinite(y0c.real):
+                        ry = y0c.real
+                        self.ax.plot(0, ry, 's', color=color, markersize=9, zorder=6,
+                                     markeredgecolor='#eceff4', markeredgewidth=1)
+                        self.ax.annotate(f'(0, {ry:.4g})', (0, ry),
+                                         textcoords='offset points', xytext=(5, 8),
+                                         color='#eceff4', fontsize=8,
+                                         bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                        intercept_parts.append(
+                            f'<span style="color:{color}">■</span> <b>{label}</b>'
+                            f'  y-int: (0, {ry:.4g})'
+                        )
+                except Exception:
+                    pass
+
+            elif kind == 'implicit':
+                expr = data
+                try:
+                    mx = np.linspace(x_min, x_max, 500)
+                    my = np.linspace(y_min, y_max, 500)
+                    X, Y = np.meshgrid(mx, my)
+                    fn = sympy.lambdify((x_sym, y_sym), expr, modules=['numpy'])
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        Z = np.asarray(fn(X, Y), dtype=float)
+                    if Z.shape != X.shape:
+                        Z = np.broadcast_to(Z, X.shape).copy()
+                    Z[~np.isfinite(Z)] = np.nan
+                    self.ax.contour(X, Y, Z, levels=[0], colors=[color], linewidths=[2.5])
+                    self.ax.plot([], [], color=color, linewidth=2.5, label=label)
+                    implicit_list.append((label, expr, color))
+
+                    def _sign_roots_1d(h, domain):
+                        """Find sign-change roots in a 1-D array h over domain."""
+                        roots = []
+                        h = np.asarray(h, dtype=float)
+                        h[~np.isfinite(h)] = np.nan
+                        mask = np.isfinite(h)
+                        if mask.sum() < 2:
+                            return roots
+                        hf, xf = h[mask], domain[mask]
+                        for si in np.where(np.diff(np.sign(hf)))[0]:
+                            d = hf[si+1] - hf[si]
+                            if d != 0:
+                                roots.append(float(xf[si] - hf[si] * (xf[si+1] - xf[si]) / d))
+                        return roots
+
+                    # ── x-intercepts of implicit curve: F(x, 0) = 0 ────────
+                    xi_found = []
+                    try:
+                        for r in sympy.solve(expr.subs(y_sym, 0), x_sym):
+                            try:
+                                if r.is_real and x_min <= float(r) <= x_max:
+                                    xi_found.append(float(r))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if not xi_found:
+                        fn_x = sympy.lambdify(x_sym, expr.subs(y_sym, 0), modules=['numpy'])
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            xi_found = _sign_roots_1d(np.asarray(fn_x(x_vals), dtype=float), x_vals)
+                    for rx in xi_found:
+                        self.ax.plot(rx, 0, 'o', color=color, markersize=9, zorder=6,
+                                     markeredgecolor='#eceff4', markeredgewidth=1)
+                        self.ax.annotate(f'({rx:.4g}, 0)', (rx, 0),
+                                         textcoords='offset points', xytext=(5, 8),
+                                         color='#eceff4', fontsize=8,
+                                         bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                    if xi_found:
+                        intercept_parts.append(
+                            f'<span style="color:{color}">●</span> <b>{label}</b>'
+                            f'  x-int: ' + ', '.join(f'({rx:.4g}, 0)' for rx in xi_found)
+                        )
+
+                    # ── y-intercepts of implicit curve: F(0, y) = 0 ─────────
+                    yi_found = []
+                    try:
+                        for r in sympy.solve(expr.subs(x_sym, 0), y_sym):
+                            try:
+                                if r.is_real and y_min <= float(r) <= y_max:
+                                    yi_found.append(float(r))
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    if not yi_found:
+                        fn_y = sympy.lambdify(y_sym, expr.subs(x_sym, 0), modules=['numpy'])
+                        y_mesh = np.linspace(y_min, y_max, 800)
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            yi_found = _sign_roots_1d(np.asarray(fn_y(y_mesh), dtype=float), y_mesh)
+                    for ry in yi_found:
+                        self.ax.plot(0, ry, 's', color=color, markersize=9, zorder=6,
+                                     markeredgecolor='#eceff4', markeredgewidth=1)
+                        self.ax.annotate(f'(0, {ry:.4g})', (0, ry),
+                                         textcoords='offset points', xytext=(5, 8),
+                                         color='#eceff4', fontsize=8,
+                                         bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                    if yi_found:
+                        intercept_parts.append(
+                            f'<span style="color:{color}">■</span> <b>{label}</b>'
+                            f'  y-int: ' + ', '.join(f'(0, {ry:.4g})' for ry in yi_found)
+                        )
+
+                except Exception as e:
+                    intercept_parts.append(f'<span style="color:#bf616a">Error [{label}]: {e}</span>')
+
+            elif kind == 'vertical':
+                self.ax.axvline(data, color=color, linewidth=2.5, label=label)
+
+        # ── intersections between explicit pairs ──────────────────────────
+        for a in range(len(explicit_list)):
+            for b in range(a + 1, len(explicit_list)):
+                lbl_a, expr_a, _, y_a = explicit_list[a]
+                lbl_b, expr_b, _, y_b = explicit_list[b]
+                pts = []
+
+                try:
+                    sym_pts = sympy.solve(expr_a - expr_b, x_sym)
+                    for p in sym_pts:
+                        try:
+                            if p.is_real:
+                                px = float(p)
+                                if x_min <= px <= x_max:
+                                    py = float(expr_a.subs(x_sym, p).evalf())
+                                    if np.isfinite(py):
+                                        pts.append((px, py))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # numerical fallback
+                if not pts:
+                    diff = y_a - y_b
+                    mask = np.isfinite(diff)
+                    if mask.sum() > 1:
+                        df, xf, yaf = diff[mask], x_vals[mask], y_a[mask]
+                        for si in np.where(np.diff(np.sign(df)))[0]:
+                            d = df[si+1] - df[si]
+                            if d != 0:
+                                px = xf[si] - df[si] * (xf[si+1] - xf[si]) / d
+                                py = float((yaf[si] + yaf[si+1]) / 2)
+                                if np.isfinite(px) and np.isfinite(py):
+                                    pts.append((px, py))
+
+                for px, py in pts:
+                    self.ax.plot(px, py, 'D', color='#ffffff', markersize=9, zorder=7,
+                                 markeredgecolor='#4c566a', markeredgewidth=1)
+                    self.ax.annotate(f'({px:.4g}, {py:.4g})', (px, py),
+                                     textcoords='offset points', xytext=(5, 8),
+                                     color='#eceff4', fontsize=8,
+                                     bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                if pts:
+                    intercept_parts.append(
+                        f'<b>∩ {lbl_a} & {lbl_b}:</b> ' +
+                        ', '.join(f'({px:.4g}, {py:.4g})' for px, py in pts)
+                    )
+
+        # ── intersections: explicit curve ∩ implicit curve ────────────────
+        for lbl_e, expr_e, col_e, y_e in explicit_list:
+            for lbl_i, expr_i, col_i in implicit_list:
+                pts = []
+                try:
+                    fn_i = sympy.lambdify((x_sym, y_sym), expr_i, modules=['numpy'])
+                    with np.errstate(divide='ignore', invalid='ignore'):
+                        h = np.asarray(fn_i(x_vals, y_e), dtype=float)
+                    h[~np.isfinite(h)] = np.nan
+                    mask = np.isfinite(h)
+                    if mask.sum() > 1:
+                        hf, xf, yef = h[mask], x_vals[mask], y_e[mask]
+                        for si in np.where(np.diff(np.sign(hf)))[0]:
+                            d = hf[si+1] - hf[si]
+                            if d != 0:
+                                px = xf[si] - hf[si] * (xf[si+1] - xf[si]) / d
+                                py = float((yef[si] + yef[si+1]) / 2)
+                                if np.isfinite(px) and np.isfinite(py):
+                                    pts.append((px, py))
+                except Exception:
+                    pass
+                for px, py in pts:
+                    self.ax.plot(px, py, 'D', color='#ffffff', markersize=9, zorder=7,
+                                 markeredgecolor='#4c566a', markeredgewidth=1)
+                    self.ax.annotate(f'({px:.4g}, {py:.4g})', (px, py),
+                                     textcoords='offset points', xytext=(5, 8),
+                                     color='#eceff4', fontsize=8,
+                                     bbox=dict(boxstyle='round,pad=0.2', fc='#2e3440', alpha=0.85, ec='none'))
+                if pts:
+                    intercept_parts.append(
+                        f'<b>∩ {lbl_e} & {lbl_i}:</b> ' +
+                        ', '.join(f'({px:.4g}, {py:.4g})' for px, py in pts)
+                    )
+
+        self.ax.set_xlim(x_min, x_max)
+        self.ax.set_ylim(y_min, y_max)
+        self.ax.legend(facecolor='#1e222b', edgecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+        self.canvas.draw()
+
+        self.intercepts_output.setHtml(
+            '<br>'.join(intercept_parts) if intercept_parts
+            else '<i style="color:#4c566a">No intercepts found in current view.</i>'
+        )
 
 
     # ── Complex Numbers Tab ─────────────────────────────────────────────────
@@ -1460,6 +1918,7 @@ class Karhulaattori(QMainWindow):
         ogl.addWidget(self.cx_output)
         self.cx_result_latex = LatexCanvas(height=120)
         ogl.addWidget(self.cx_result_latex)
+        ogl.addWidget(self._copy_latex_btn(self.cx_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(out_grp)
 
         # Argand plane (canvas)
