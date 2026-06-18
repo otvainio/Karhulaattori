@@ -1,17 +1,22 @@
 import sys
+import json
+import os
+from datetime import datetime
 import sympy
 import numpy as np
 import matplotlib
 matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3D projection
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QGridLayout, QListWidget, QListWidgetItem,
-    QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QTextEdit, QGroupBox, QScrollArea
+    QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QTextEdit, QGroupBox, QScrollArea,
+    QComboBox
 )
 
 # Premium Nordic Dark Theme QSS Stylesheet
@@ -278,10 +283,20 @@ class Karhulaattori(QMainWindow):
         layout.addWidget(self.tabs)
         
         # Tabs setup
+        self._history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'history.json')
+        self._global_history = []
+        self._load_history()
+
         self.setup_calculator_tab()
         self.setup_symbolic_tab()
         self.setup_linear_algebra_tab()
         self.setup_complex_tab()
+        self.setup_calculus_tab()
+        self.setup_statistics_tab()
+        self.setup_3d_graphing_tab()
+        self.setup_number_theory_tab()
+        self.setup_analysis_tab()
+        self.setup_history_tab()
         
         self.apply_styles()
         self.bind_shortcuts()
@@ -478,7 +493,7 @@ class Karhulaattori(QMainWindow):
 
     def setup_symbolic_tab(self):
         sym_widget = QWidget()
-        self.tabs.addTab(sym_widget, "Symbolic Solver & Grapher")
+        self.tabs.addTab(sym_widget, "Symbolic Solver")
         
         layout = QHBoxLayout(sym_widget)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -516,12 +531,8 @@ class Karhulaattori(QMainWindow):
         
         sym_ops = [
             ("Solve Equation(s)", "solve_eq"),
-            ("Solve ODE", "solve_ode"),
-            ("Derivative (d/dx)", "derive_eq"),
-            ("Integral (∫dx)", "integrate_eq"),
-            ("Simplify Formula", "simplify_eq"),
-            ("Limit x -> 0", "limit_0"),
-            ("Taylor Expansion", "taylor_eq")
+            ("Solve ODE",         "solve_ode"),
+            ("Simplify Formula",  "simplify_eq"),
         ]
         
         for idx, (label, act) in enumerate(sym_ops):
@@ -1185,6 +1196,7 @@ class Karhulaattori(QMainWindow):
         item = QListWidgetItem(item_text)
         item.setData(Qt.ItemDataRole.UserRole, result)
         self.history_list.insertItem(0, item)
+        self._add_to_global_history("Calculator", "evaluate", calculation, f"= {result}")
 
     def history_item_clicked(self, item):
         result_val = item.data(Qt.ItemDataRole.UserRole)
@@ -1232,6 +1244,7 @@ class Karhulaattori(QMainWindow):
         def _set(label, latex_str):
             self.sym_output.setHtml(f"<b>{label}</b>")
             self.sym_result_latex.render(latex_str)
+            self._add_to_global_history("Symbolic Solver", action, func_str, label)
 
         try:
             if action == "solve_ode":
@@ -1992,6 +2005,8 @@ class Karhulaattori(QMainWindow):
         def _set(label, latex_str):
             self.cx_output.setHtml(f"<b>{label}</b>")
             self.cx_result_latex.render(latex_str)
+            self._add_to_global_history("Complex Numbers", action,
+                                        f"z₁={self.cx_z1.text()}, z₂={self.cx_z2.text()}", label)
 
         try:
             z1 = sympy.sympify(self.cx_z1.text())
@@ -2055,6 +2070,2224 @@ class Karhulaattori(QMainWindow):
         except Exception as e:
             self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
             self.cx_result_latex.render("")
+
+
+    def setup_calculus_tab(self):
+        calc_widget = QWidget()
+        self.tabs.addTab(calc_widget, "Calculus")
+
+        outer = QHBoxLayout(calc_widget)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        field_style = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 14px; padding: 6px;"
+        )
+
+        # ── LEFT: inputs + operations + output ───────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        # Expression input
+        grp_input = QGroupBox("Expression  f(x)")
+        gi = QVBoxLayout(grp_input)
+        gi.setSpacing(6)
+
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("f(x) ="))
+        self.calc_expr = QLineEdit("x**3 - 3*x**2 + 2*x")
+        self.calc_expr.setStyleSheet(field_style)
+        self.calc_expr.textChanged.connect(self._update_calc_input_preview)
+        row1.addWidget(self.calc_expr)
+        gi.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Variable:"))
+        self.calc_var = QLineEdit("x")
+        self.calc_var.setFixedWidth(44)
+        self.calc_var.setStyleSheet(field_style)
+        row2.addWidget(self.calc_var)
+        row2.addSpacing(16)
+        row2.addWidget(QLabel("Point x₀ ="))
+        self.calc_point = QLineEdit("0")
+        self.calc_point.setFixedWidth(64)
+        self.calc_point.setStyleSheet(field_style)
+        row2.addWidget(self.calc_point)
+        row2.addSpacing(16)
+        row2.addWidget(QLabel("Order n:"))
+        self.calc_order = QLineEdit("2")
+        self.calc_order.setFixedWidth(44)
+        self.calc_order.setStyleSheet(field_style)
+        row2.addWidget(self.calc_order)
+        row2.addSpacing(16)
+        row2.addWidget(QLabel("a:"))
+        self.calc_a = QLineEdit("0")
+        self.calc_a.setFixedWidth(52)
+        self.calc_a.setStyleSheet(field_style)
+        row2.addWidget(self.calc_a)
+        row2.addWidget(QLabel("b:"))
+        self.calc_b = QLineEdit("1")
+        self.calc_b.setFixedWidth(52)
+        self.calc_b.setStyleSheet(field_style)
+        row2.addWidget(self.calc_b)
+        row2.addStretch()
+        gi.addLayout(row2)
+        left_layout.addWidget(grp_input)
+
+        # Operation buttons
+        ops_grp = QGroupBox("Operations")
+        og = QGridLayout(ops_grp)
+        og.setSpacing(8)
+        btn_style = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 36px;"
+        )
+        calc_ops = [
+            ("d/dx  Derivative",      "derivative"),
+            ("dⁿ/dxⁿ  nth Deriv.",    "nth_derivative"),
+            ("f'(x₀)  Eval Deriv.",   "eval_derivative"),
+            ("∫ dx  Indefinite",      "indefinite_integral"),
+            ("∫ₐᵇ dx  Definite",      "definite_integral"),
+            ("lim x→x₀",             "limit"),
+            ("lim x→x₀⁺  (right)",   "limit_right"),
+            ("lim x→x₀⁻  (left)",    "limit_left"),
+            ("Taylor Series",          "taylor"),
+            ("Critical Points",        "critical_points"),
+            ("Partial Fractions",      "partial_fractions"),
+            ("Simplify",               "simplify"),
+        ]
+        for idx, (lbl, act) in enumerate(calc_ops):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_calculus_op(a))
+            og.addWidget(btn, idx // 2, idx % 2)
+
+        left_layout.addWidget(ops_grp)
+
+        # Output — below buttons, same pattern as symbolic tab
+        out_grp = QGroupBox("Result")
+        ogl = QVBoxLayout(out_grp)
+        self.calc_output = QTextBrowser()
+        self.calc_output.setMaximumHeight(60)
+        self.calc_output.setStyleSheet(
+            "background-color: #242933; border: 1px solid #2e3440; "
+            "border-radius: 8px; color: #a3be8c; "
+            "font-family: 'Consolas', monospace; font-size: 13px;"
+        )
+        ogl.addWidget(self.calc_output)
+        self.calc_result_latex = LatexCanvas(height=130)
+        ogl.addWidget(self.calc_result_latex)
+        ogl.addWidget(self._copy_latex_btn(self.calc_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
+        left_layout.addWidget(out_grp)
+
+        outer.addWidget(left, 2)
+
+        # ── RIGHT: input LaTeX preview ────────────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        in_grp = QGroupBox("Input Preview")
+        ig = QVBoxLayout(in_grp)
+        self.calc_input_latex = LatexCanvas(height=120)
+        ig.addWidget(self.calc_input_latex)
+        ig.addWidget(self._copy_latex_btn(self.calc_input_latex), alignment=Qt.AlignmentFlag.AlignRight)
+        right_layout.addWidget(in_grp)
+        right_layout.addStretch()
+
+        outer.addWidget(right, 3)
+
+        self._update_calc_input_preview()
+
+    def _update_calc_input_preview(self):
+        try:
+            v = self.calc_var.text().strip() or 'x'
+            expr = sympy.sympify(self.calc_expr.text())
+            self.calc_input_latex.render(r"f(" + v + r") = " + sympy.latex(expr))
+        except Exception:
+            pass
+
+    def execute_calculus_op(self, action):
+        try:
+            v = self.calc_var.text().strip() or 'x'
+            x = sympy.Symbol(v)
+            expr = sympy.sympify(self.calc_expr.text())
+
+            def _show(header, latex_str):
+                self.calc_output.setHtml(f"<b>{header}</b>")
+                self.calc_result_latex.render(latex_str)
+                self._add_to_global_history("Calculus", action, self.calc_expr.text(), header)
+
+            if action == "derivative":
+                res = sympy.diff(expr, x)
+                _show("d/d" + v + "  f(" + v + ")",
+                      r"\frac{d}{d" + v + r"}\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+
+            elif action == "nth_derivative":
+                n = int(sympy.sympify(self.calc_order.text()))
+                res = sympy.diff(expr, x, n)
+                _show(f"d^{n}/d{v}^{n}  f({v})",
+                      r"\frac{d^{" + str(n) + r"}}{d" + v + r"^{" + str(n) + r"}}"
+                      r"\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+
+            elif action == "eval_derivative":
+                x0 = sympy.sympify(self.calc_point.text())
+                res = sympy.diff(expr, x).subs(x, x0)
+                res = sympy.nsimplify(res, rational=False)
+                num_str = ""
+                try:
+                    num_str = f"  ≈ {float(res.evalf()):.6g}"
+                except Exception:
+                    pass
+                _show(f"f'({x0}){num_str}",
+                      r"f'\!\left(" + sympy.latex(x0) + r"\right) = " + sympy.latex(res))
+
+            elif action == "indefinite_integral":
+                res = sympy.integrate(expr, x)
+                _show("∫ f(" + v + ") d" + v,
+                      r"\int " + sympy.latex(expr) + r"\, d" + v + r" = " + sympy.latex(res) + r" + C")
+
+            elif action == "definite_integral":
+                a = sympy.sympify(self.calc_a.text())
+                b = sympy.sympify(self.calc_b.text())
+                res = sympy.integrate(expr, (x, a, b))
+                res = sympy.nsimplify(res, rational=False)
+                num_str = ""
+                try:
+                    num_str = f"  ≈ {float(res.evalf()):.6g}"
+                except Exception:
+                    pass
+                _show(f"∫ f({v}) d{v}  from {a} to {b}{num_str}",
+                      r"\int_{" + sympy.latex(a) + r"}^{" + sympy.latex(b) + r"} "
+                      + sympy.latex(expr) + r"\, d" + v + r" = " + sympy.latex(res))
+
+            elif action in ("limit", "limit_right", "limit_left"):
+                x0 = sympy.sympify(self.calc_point.text())
+                if action == "limit":
+                    res = sympy.limit(expr, x, x0)
+                    arrow = r"\to"
+                    lbl = f"lim {v}→{x0}"
+                elif action == "limit_right":
+                    res = sympy.limit(expr, x, x0, '+')
+                    arrow = r"\to^{+}"
+                    lbl = f"lim {v}→{x0}⁺"
+                else:
+                    res = sympy.limit(expr, x, x0, '-')
+                    arrow = r"\to^{-}"
+                    lbl = f"lim {v}→{x0}⁻"
+                res = sympy.nsimplify(res, rational=False)
+                num_str = ""
+                try:
+                    num_str = f"  ≈ {float(res.evalf()):.6g}"
+                except Exception:
+                    pass
+                _show(lbl + num_str,
+                      r"\lim_{" + v + arrow + sympy.latex(x0) + r"}"
+                      r"\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+
+            elif action == "taylor":
+                n = int(sympy.sympify(self.calc_order.text()))
+                x0 = sympy.sympify(self.calc_point.text())
+                series = sympy.series(expr, x, x0, n + 1)
+                poly = series.removeO()
+                _show(f"Taylor series around {v}={x0}, order {n}",
+                      sympy.latex(expr) + r" \approx " + sympy.latex(sympy.expand(poly))
+                      + r" + O\!\left((" + v + r"-" + sympy.latex(x0) + r")^{" + str(n + 1) + r"}\right)")
+
+            elif action == "critical_points":
+                deriv = sympy.diff(expr, x)
+                crit = sympy.solve(deriv, x)
+                second = sympy.diff(expr, x, 2)
+                rows = []
+                for p in crit:
+                    try:
+                        pc = complex(p.evalf())
+                    except Exception:
+                        continue
+                    if abs(pc.imag) > 1e-9:
+                        continue
+                    fv = sympy.nsimplify(expr.subs(x, p), rational=False)
+                    sd = second.subs(x, p)
+                    try:
+                        sd_f = float(sd.evalf())
+                        kind = "local min" if sd_f > 0 else "local max" if sd_f < 0 else "inflection?"
+                    except Exception:
+                        kind = "unknown"
+                    rows.append((p, fv, kind))
+                if rows:
+                    self.calc_output.setHtml(
+                        "<b>Critical points:</b> " +
+                        ";  ".join(f"{v}={sympy.latex(p)}  f={sympy.latex(fv)}  ({k})" for p, fv, k in rows)
+                    )
+                    latex_str = r"f'(" + v + r") = " + sympy.latex(deriv) + r" = 0"
+                    for p, fv, k in rows:
+                        latex_str += r",\quad " + v + r"=" + sympy.latex(p)
+                    self.calc_result_latex.render(latex_str)
+                else:
+                    _show("No real critical points",
+                          r"f'(" + v + r") = " + sympy.latex(deriv) + r" = 0 \Rightarrow \text{no real roots}")
+
+            elif action == "partial_fractions":
+                res = sympy.apart(expr, x)
+                _show("Partial fractions",
+                      sympy.latex(expr) + r" = " + sympy.latex(res))
+
+            elif action == "simplify":
+                res = sympy.simplify(expr)
+                _show("Simplified",
+                      sympy.latex(expr) + r" = " + sympy.latex(res))
+
+        except Exception as e:
+            self.calc_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.calc_result_latex.render("")
+
+
+    def setup_statistics_tab(self):
+        stat_widget = QWidget()
+        self.tabs.addTab(stat_widget, "Statistics")
+
+        outer = QHBoxLayout(stat_widget)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        field_style = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        btn_style = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 36px;"
+        )
+
+        # ── LEFT: data input + operations ────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        # Data input
+        data_grp = QGroupBox("Data  (comma or space separated)")
+        dg = QVBoxLayout(data_grp)
+        self.stat_data_input = QTextEdit("2, 4, 4, 4, 5, 5, 7, 9")
+        self.stat_data_input.setFixedHeight(56)
+        self.stat_data_input.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 13px; padding: 4px;"
+        )
+        dg.addWidget(self.stat_data_input)
+        left_layout.addWidget(data_grp)
+
+        # Descriptive stats buttons
+        desc_grp = QGroupBox("Descriptive Statistics")
+        dsg = QGridLayout(desc_grp)
+        dsg.setSpacing(8)
+        desc_ops = [
+            ("All Stats",    "all_stats"),
+            ("Histogram",    "histogram"),
+            ("Box Plot",     "boxplot"),
+            ("Mean",         "mean"),
+            ("Median",       "median"),
+            ("Mode",         "mode"),
+            ("Std Dev",      "std"),
+            ("Variance",     "variance"),
+            ("Min / Max",    "minmax"),
+            ("Quartiles",    "quartiles"),
+            ("Skewness",     "skewness"),
+            ("Kurtosis",     "kurtosis"),
+        ]
+        for idx, (lbl, act) in enumerate(desc_ops):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_stat_op(a))
+            dsg.addWidget(btn, idx // 2, idx % 2)
+        left_layout.addWidget(desc_grp)
+
+        # Combinatorics
+        comb_grp = QGroupBox("Combinatorics")
+        cg = QGridLayout(comb_grp)
+        cg.setSpacing(6)
+        cg.addWidget(QLabel("n:"), 0, 0)
+        self.stat_n = QLineEdit("10")
+        self.stat_n.setFixedWidth(60)
+        self.stat_n.setStyleSheet(field_style)
+        cg.addWidget(self.stat_n, 0, 1)
+        cg.addWidget(QLabel("r:"), 0, 2)
+        self.stat_r = QLineEdit("3")
+        self.stat_r.setFixedWidth(60)
+        self.stat_r.setStyleSheet(field_style)
+        cg.addWidget(self.stat_r, 0, 3)
+        for idx, (lbl, act) in enumerate([("n! Factorial", "factorial"), ("nCr", "ncr"), ("nPr", "npr")]):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_stat_op(a))
+            cg.addWidget(btn, 1, idx)
+        left_layout.addWidget(comb_grp)
+
+        # Distributions
+        dist_grp = QGroupBox("Probability Distributions")
+        distg = QVBoxLayout(dist_grp)
+        distg.setSpacing(6)
+
+        dist_row = QHBoxLayout()
+        dist_row.addWidget(QLabel("Distribution:"))
+        self.stat_dist_combo = QComboBox()
+        self.stat_dist_combo.addItems(["Normal", "Binomial", "Poisson", "t-distribution", "Chi-squared", "Exponential"])
+        self.stat_dist_combo.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 13px;"
+        )
+        dist_row.addWidget(self.stat_dist_combo)
+        distg.addLayout(dist_row)
+
+        params_row = QHBoxLayout()
+        for lbl, attr, default in [("p1:", "stat_p1", "0"), ("p2:", "stat_p2", "1"), ("x:", "stat_x", "0")]:
+            params_row.addWidget(QLabel(lbl))
+            w = QLineEdit(default)
+            w.setFixedWidth(64)
+            w.setStyleSheet(field_style)
+            setattr(self, attr, w)
+            params_row.addWidget(w)
+        params_row.addStretch()
+        distg.addLayout(params_row)
+
+        hint = QLabel("Normal: p1=μ p2=σ  |  Binomial: p1=n p2=p  |  Poisson/Exp: p1=λ  |  t/χ²: p1=df")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setWordWrap(True)
+        distg.addWidget(hint)
+
+        dist_btn_row = QGridLayout()
+        dist_btn_row.setSpacing(8)
+        for idx, (lbl, act) in enumerate([
+            ("Plot PDF/PMF", "dist_pdf"), ("Plot CDF", "dist_cdf"),
+            ("P(X ≤ x)",    "dist_prob"), ("Percentile → x", "dist_inv"),
+        ]):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_stat_op(a))
+            dist_btn_row.addWidget(btn, idx // 2, idx % 2)
+        distg.addLayout(dist_btn_row)
+        left_layout.addWidget(dist_grp)
+        left_layout.addStretch()
+        outer.addWidget(left, 2)
+
+        # ── RIGHT: plot canvas + text output ─────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        plot_grp = QGroupBox("Plot")
+        pg = QVBoxLayout(plot_grp)
+        self.stat_fig = Figure(facecolor='#1e222b')
+        self.stat_canvas = FigureCanvas(self.stat_fig)
+        self.stat_ax = self.stat_fig.subplots()
+        self._init_stat_axes()
+        pg.addWidget(self.stat_canvas)
+        right_layout.addWidget(plot_grp, 1)
+
+        self.stat_output = QTextBrowser()
+        self.stat_output.setMaximumHeight(150)
+        self.stat_output.setStyleSheet(
+            "background-color: #242933; border: 1px solid #2e3440; border-radius: 8px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 13px; padding: 6px;"
+        )
+        right_layout.addWidget(self.stat_output)
+        outer.addWidget(right, 3)
+
+    def _init_stat_axes(self):
+        ax = self.stat_ax
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4')
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.7)
+        self.stat_fig.tight_layout(pad=1.2)
+        self.stat_canvas.draw()
+
+    def _get_stat_data(self):
+        raw = self.stat_data_input.toPlainText().strip()
+        tokens = raw.replace(',', ' ').split()
+        if not tokens:
+            raise ValueError("No data entered")
+        return np.array([float(t) for t in tokens])
+
+    def _get_dist(self):
+        from scipy import stats
+        name = self.stat_dist_combo.currentText()
+        p1 = float(self.stat_p1.text())
+        p2_text = self.stat_p2.text().strip()
+        p2 = float(p2_text) if p2_text else 1.0
+        if name == "Normal":
+            return stats.norm(loc=p1, scale=p2), f"N({p1}, {p2}²)"
+        elif name == "Binomial":
+            return stats.binom(n=int(p1), p=p2), f"Bin({int(p1)}, {p2})"
+        elif name == "Poisson":
+            return stats.poisson(mu=p1), f"Poisson({p1})"
+        elif name == "t-distribution":
+            return stats.t(df=p1), f"t({p1} df)"
+        elif name == "Chi-squared":
+            return stats.chi2(df=p1), f"χ²({p1} df)"
+        elif name == "Exponential":
+            return stats.expon(scale=1.0 / p1), f"Exp(λ={p1})"
+        raise ValueError(f"Unknown distribution: {name}")
+
+    def execute_stat_op(self, action):
+        from scipy import stats as sp
+        _stat_input = self.stat_data_input.toPlainText().strip()[:60]
+        try:
+            if action in ("all_stats", "histogram", "boxplot", "mean", "median", "mode",
+                          "std", "variance", "minmax", "quartiles", "skewness", "kurtosis"):
+                data = self._get_stat_data()
+                n = len(data)
+                mean = np.mean(data)
+                median = np.median(data)
+                mode_r = sp.mode(data, keepdims=True)
+                mode_val = mode_r.mode[0]
+                std = np.std(data, ddof=1)
+                var = np.var(data, ddof=1)
+                mn, mx = np.min(data), np.max(data)
+                q1 = np.percentile(data, 25)
+                q3 = np.percentile(data, 75)
+                iqr = q3 - q1
+                skew = sp.skew(data)
+                kurt = sp.kurtosis(data)
+
+                self.stat_ax.clear()
+                self._init_stat_axes()
+
+                if action == "histogram":
+                    self.stat_ax.hist(data, bins='auto', color='#88c0d0', edgecolor='#1e222b', alpha=0.85)
+                    self.stat_ax.set_title("Histogram", color='#eceff4')
+                    self.stat_canvas.draw()
+                    self.stat_output.setHtml(f"<b>n</b> = {n}")
+                    return
+
+                if action == "boxplot":
+                    bp = self.stat_ax.boxplot(
+                        data, patch_artist=True, vert=False,
+                        boxprops=dict(facecolor='#3b4a6b', color='#88c0d0'),
+                        medianprops=dict(color='#a3be8c', linewidth=2),
+                        whiskerprops=dict(color='#88c0d0'),
+                        capprops=dict(color='#88c0d0'),
+                        flierprops=dict(markerfacecolor='#bf616a', marker='o', markersize=6),
+                    )
+                    self.stat_ax.set_title("Box Plot", color='#eceff4')
+                    self.stat_canvas.draw()
+                    self.stat_output.setHtml(
+                        f"<b>Min</b> = {mn:.6g} &nbsp; <b>Q1</b> = {q1:.6g} &nbsp; "
+                        f"<b>Median</b> = {median:.6g} &nbsp; <b>Q3</b> = {q3:.6g} &nbsp; "
+                        f"<b>Max</b> = {mx:.6g}"
+                    )
+                    return
+
+                if action == "all_stats":
+                    self.stat_ax.hist(data, bins='auto', color='#88c0d0', edgecolor='#1e222b', alpha=0.75)
+                    self.stat_ax.axvline(mean, color='#a3be8c', linestyle='--', linewidth=1.5, label=f'Mean={mean:.4g}')
+                    self.stat_ax.axvline(median, color='#ebcb8b', linestyle=':', linewidth=1.5, label=f'Median={median:.4g}')
+                    self.stat_ax.set_title("Data Distribution", color='#eceff4')
+                    self.stat_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                    self.stat_canvas.draw()
+                    self.stat_output.setHtml(
+                        f"<b>n</b> = {n}<br>"
+                        f"<b>Mean</b> = {mean:.6g} &nbsp;&nbsp; <b>Median</b> = {median:.6g} &nbsp;&nbsp; <b>Mode</b> = {mode_val:.6g}<br>"
+                        f"<b>Std Dev</b> = {std:.6g} &nbsp;&nbsp; <b>Variance</b> = {var:.6g}<br>"
+                        f"<b>Min</b> = {mn:.6g} &nbsp;&nbsp; <b>Max</b> = {mx:.6g} &nbsp;&nbsp; <b>Range</b> = {mx - mn:.6g}<br>"
+                        f"<b>Q1</b> = {q1:.6g} &nbsp;&nbsp; <b>Q3</b> = {q3:.6g} &nbsp;&nbsp; <b>IQR</b> = {iqr:.6g}<br>"
+                        f"<b>Skewness</b> = {skew:.6g} &nbsp;&nbsp; <b>Kurtosis</b> = {kurt:.6g}"
+                    )
+                    return
+
+                text_map = {
+                    "mean":     f"<b>Mean</b> = {mean:.8g}",
+                    "median":   f"<b>Median</b> = {median:.8g}",
+                    "mode":     f"<b>Mode</b> = {mode_val:.8g}",
+                    "std":      f"<b>Std Dev (sample, ddof=1)</b> = {std:.8g}",
+                    "variance": f"<b>Variance (sample, ddof=1)</b> = {var:.8g}",
+                    "minmax":   f"<b>Min</b> = {mn:.6g}<br><b>Max</b> = {mx:.6g}<br><b>Range</b> = {mx - mn:.6g}",
+                    "quartiles":f"<b>Q1</b> = {q1:.6g}<br><b>Median (Q2)</b> = {median:.6g}<br><b>Q3</b> = {q3:.6g}<br><b>IQR</b> = {iqr:.6g}",
+                    "skewness": f"<b>Skewness</b> = {skew:.8g}",
+                    "kurtosis": f"<b>Kurtosis (excess)</b> = {kurt:.8g}",
+                }
+                self.stat_output.setHtml(text_map[action])
+
+            elif action in ("factorial", "ncr", "npr"):
+                import math
+                n = int(float(self.stat_n.text()))
+                r = int(float(self.stat_r.text()))
+                if action == "factorial":
+                    self.stat_output.setHtml(f"<b>{n}!</b> = {math.factorial(n):,}")
+                elif action == "ncr":
+                    self.stat_output.setHtml(f"<b>C({n}, {r})</b> = {math.comb(n, r):,}")
+                elif action == "npr":
+                    self.stat_output.setHtml(f"<b>P({n}, {r})</b> = {math.perm(n, r):,}")
+
+            elif action in ("dist_pdf", "dist_cdf", "dist_prob", "dist_inv"):
+                dist, dist_name = self._get_dist()
+                name = self.stat_dist_combo.currentText()
+                is_discrete = name in ("Binomial", "Poisson")
+
+                self.stat_ax.clear()
+                self._init_stat_axes()
+
+                if action == "dist_pdf":
+                    if is_discrete:
+                        lo, hi = int(dist.ppf(0.001)), int(dist.ppf(0.999)) + 1
+                        xs = np.arange(lo, hi + 1)
+                        self.stat_ax.bar(xs, dist.pmf(xs), color='#88c0d0', edgecolor='#1e222b', alpha=0.85)
+                        self.stat_ax.set_title(f"PMF — {dist_name}", color='#eceff4')
+                    else:
+                        lo, hi = dist.ppf(0.001), dist.ppf(0.999)
+                        xs = np.linspace(lo, hi, 500)
+                        ys = dist.pdf(xs)
+                        self.stat_ax.plot(xs, ys, color='#88c0d0', linewidth=2.5)
+                        self.stat_ax.fill_between(xs, ys, alpha=0.2, color='#88c0d0')
+                        self.stat_ax.set_title(f"PDF — {dist_name}", color='#eceff4')
+                    self.stat_output.setHtml(
+                        f"<b>{dist_name}</b><br>"
+                        f"Mean = {dist.mean():.6g} &nbsp;&nbsp; Std = {dist.std():.6g} &nbsp;&nbsp; Var = {dist.var():.6g}"
+                    )
+                    self.stat_canvas.draw()
+
+                elif action == "dist_cdf":
+                    lo, hi = dist.ppf(0.001), dist.ppf(0.999)
+                    if is_discrete:
+                        xs = np.arange(int(lo), int(hi) + 2)
+                    else:
+                        xs = np.linspace(lo, hi, 500)
+                    self.stat_ax.plot(xs, dist.cdf(xs), color='#a3be8c', linewidth=2.5)
+                    self.stat_ax.set_ylim(0, 1.05)
+                    self.stat_ax.set_title(f"CDF — {dist_name}", color='#eceff4')
+                    self.stat_output.setHtml(f"<b>CDF — {dist_name}</b>")
+                    self.stat_canvas.draw()
+
+                elif action == "dist_prob":
+                    x_val = float(self.stat_x.text())
+                    prob = float(dist.cdf(x_val))
+                    lo, hi = dist.ppf(0.001), dist.ppf(0.999)
+                    if is_discrete:
+                        xs = np.arange(int(lo), int(hi) + 2)
+                        ys = dist.pmf(xs)
+                        self.stat_ax.bar(xs, ys, color='#3b4a6b', edgecolor='#1e222b', alpha=0.7)
+                        mask = xs <= x_val
+                        self.stat_ax.bar(xs[mask], ys[mask], color='#88c0d0', edgecolor='#1e222b', alpha=0.9)
+                    else:
+                        xs = np.linspace(lo, hi, 500)
+                        ys = dist.pdf(xs)
+                        self.stat_ax.plot(xs, ys, color='#88c0d0', linewidth=2)
+                        xs_shade = xs[xs <= x_val]
+                        self.stat_ax.fill_between(xs_shade, dist.pdf(xs_shade), alpha=0.45, color='#88c0d0')
+                    self.stat_ax.axvline(x_val, color='#bf616a', linestyle='--', linewidth=1.5)
+                    self.stat_ax.set_title(f"P(X ≤ {x_val}) = {prob:.4g}  — {dist_name}", color='#eceff4')
+                    self.stat_output.setHtml(
+                        f"<b>P(X ≤ {x_val})</b> = {prob:.6g}<br>"
+                        f"<b>P(X > {x_val})</b> = {1 - prob:.6g}"
+                    )
+                    self.stat_canvas.draw()
+
+                elif action == "dist_inv":
+                    p_val = float(self.stat_x.text())
+                    if not 0 < p_val < 1:
+                        raise ValueError("x must be a probability between 0 and 1")
+                    x_val = float(dist.ppf(p_val))
+                    self.stat_output.setHtml(
+                        f"<b>P(X ≤ x) = {p_val}  →  x = {x_val:.8g}</b>"
+                    )
+
+            # Record non-plot actions to global history
+            if action not in ("histogram", "boxplot", "dist_pdf", "dist_cdf", "dist_prob"):
+                result_text = self.stat_output.toPlainText().strip()
+                if result_text:
+                    self._add_to_global_history("Statistics", action, _stat_input, result_text)
+
+        except Exception as e:
+            self.stat_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+
+
+    def setup_3d_graphing_tab(self):
+        tab = QWidget()
+        self.tabs.addTab(tab, "3D Grapher")
+
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        field_style = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        btn_style = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 36px;"
+        )
+
+        # ── LEFT: controls ────────────────────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        # Surface expression input
+        surf_grp = QGroupBox("Expressions — one per line  (explicit or implicit)")
+        sg = QVBoxLayout(surf_grp)
+        sg.setSpacing(4)
+        hint_s = QLabel(
+            "Explicit:  sin(sqrt(x**2+y**2))  or  z=x**2-y**2\n"
+            "Implicit:  x**2+y**2+z**2=4   or   x^2+y^2=z^2  (^ works too)"
+        )
+        hint_s.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint_s.setWordWrap(True)
+        sg.addWidget(hint_s)
+        self.g3d_expr_input = QTextEdit("sin(sqrt(x**2 + y**2))")
+        self.g3d_expr_input.setFixedHeight(68)
+        self.g3d_expr_input.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 13px; padding: 4px;"
+        )
+        sg.addWidget(self.g3d_expr_input)
+        left_layout.addWidget(surf_grp)
+
+        # Range & resolution
+        rng_grp = QGroupBox("Range & Resolution")
+        rg = QGridLayout(rng_grp)
+        rg.setSpacing(6)
+        for row, axis in enumerate(('x', 'y', 'z')):
+            rg.addWidget(QLabel(f"{axis} min:"), row, 0)
+            w_min = QLineEdit("-5")
+            w_min.setStyleSheet(field_style)
+            rg.addWidget(w_min, row, 1)
+            rg.addWidget(QLabel(f"{axis} max:"), row, 2)
+            w_max = QLineEdit("5")
+            w_max.setStyleSheet(field_style)
+            rg.addWidget(w_max, row, 3)
+            setattr(self, f"g3d_{axis}min", w_min)
+            setattr(self, f"g3d_{axis}max", w_max)
+
+        rg.addWidget(QLabel("Resolution:"), 3, 0)
+        self.g3d_res = QComboBox()
+        self.g3d_res.addItems(["50  (fast)", "75", "100  (detailed)"])
+        self.g3d_res.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        rg.addWidget(self.g3d_res, 3, 1, 1, 3)
+        left_layout.addWidget(rng_grp)
+
+        # Colormap
+        cmap_grp = QGroupBox("Appearance")
+        cg = QHBoxLayout(cmap_grp)
+        cg.addWidget(QLabel("Colormap:"))
+        self.g3d_cmap = QComboBox()
+        self.g3d_cmap.addItems(["viridis", "plasma", "coolwarm", "ocean", "magma", "inferno", "twilight", "RdBu"])
+        self.g3d_cmap.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        cg.addWidget(self.g3d_cmap)
+        left_layout.addWidget(cmap_grp)
+
+        # Plot type buttons
+        type_grp = QGroupBox("Plot Type")
+        tg = QGridLayout(type_grp)
+        tg.setSpacing(8)
+        for idx, (lbl, act) in enumerate([
+            ("Surface",            "surface"),
+            ("Wireframe",          "wireframe"),
+            ("Surface + Contour",  "surface_contour"),
+            ("Filled Contour Map", "contourf"),
+        ]):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.plot_3d(a))
+            tg.addWidget(btn, idx // 2, idx % 2)
+        left_layout.addWidget(type_grp)
+
+        # Parametric curve
+        param_grp = QGroupBox("Parametric Curve  (x(t), y(t), z(t))")
+        pg = QGridLayout(param_grp)
+        pg.setSpacing(6)
+        hint_p = QLabel("e.g. helix: x=cos(t) y=sin(t) z=t/(2*pi)  t: 0 → 4*pi")
+        hint_p.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint_p.setWordWrap(True)
+        pg.addWidget(hint_p, 0, 0, 1, 2)
+        for row, (lbl, attr, default) in enumerate([
+            ("x(t) =", "g3d_xt", "cos(t)"),
+            ("y(t) =", "g3d_yt", "sin(t)"),
+            ("z(t) =", "g3d_zt", "t / (2*pi)"),
+        ], start=1):
+            pg.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(field_style)
+            setattr(self, attr, w)
+            pg.addWidget(w, row, 1)
+
+        t_row = QHBoxLayout()
+        t_row.addWidget(QLabel("t:"))
+        self.g3d_tmin = QLineEdit("0")
+        self.g3d_tmin.setFixedWidth(80)
+        self.g3d_tmin.setStyleSheet(field_style)
+        t_row.addWidget(self.g3d_tmin)
+        t_row.addWidget(QLabel("to"))
+        self.g3d_tmax = QLineEdit("4*pi")
+        self.g3d_tmax.setFixedWidth(80)
+        self.g3d_tmax.setStyleSheet(field_style)
+        t_row.addWidget(self.g3d_tmax)
+        t_row.addStretch()
+        pg.addLayout(t_row, 4, 0, 1, 2)
+
+        param_btn = QPushButton("Plot Parametric Curve")
+        param_btn.setStyleSheet(btn_style)
+        param_btn.clicked.connect(lambda: self.plot_3d("parametric"))
+        pg.addWidget(param_btn, 5, 0, 1, 2)
+        left_layout.addWidget(param_grp)
+
+        # Clear + Reset View
+        ctrl_row = QHBoxLayout()
+        clear_btn = QPushButton("Clear")
+        clear_btn.setStyleSheet(btn_style)
+        clear_btn.clicked.connect(self._clear_3d)
+        reset_btn = QPushButton("Reset View")
+        reset_btn.setStyleSheet(btn_style)
+        reset_btn.clicked.connect(self._reset_3d_view)
+        ctrl_row.addWidget(clear_btn)
+        ctrl_row.addWidget(reset_btn)
+        left_layout.addLayout(ctrl_row)
+
+        left_layout.addStretch()
+        outer.addWidget(left, 2)
+
+        # ── RIGHT: 3D canvas + status ─────────────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+
+        self.g3d_fig = Figure(facecolor='#1e222b')
+        self.g3d_canvas = FigureCanvas(self.g3d_fig)
+        self.g3d_ax = self.g3d_fig.add_subplot(111, projection='3d')
+        self._init_3d_axes()
+        right_layout.addWidget(self.g3d_canvas, 1)
+
+        self.g3d_output = QTextBrowser()
+        self.g3d_output.setMaximumHeight(36)
+        self.g3d_output.setStyleSheet(
+            "background-color: #242933; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        right_layout.addWidget(self.g3d_output)
+        outer.addWidget(right, 3)
+
+    def _init_3d_axes(self):
+        ax = self.g3d_ax
+        ax.set_facecolor('#1e222b')
+        ax.xaxis.pane.fill = False
+        ax.yaxis.pane.fill = False
+        ax.zaxis.pane.fill = False
+        ax.xaxis.pane.set_edgecolor('#3b4252')
+        ax.yaxis.pane.set_edgecolor('#3b4252')
+        ax.zaxis.pane.set_edgecolor('#3b4252')
+        ax.tick_params(colors='#81a1c1', labelsize=7)
+        ax.set_xlabel('x', color='#81a1c1', labelpad=4)
+        ax.set_ylabel('y', color='#81a1c1', labelpad=4)
+        ax.set_zlabel('z', color='#81a1c1', labelpad=4)
+        ax.grid(True, color='#2e3440', linewidth=0.5)
+        self.g3d_fig.tight_layout(pad=0.5)
+        self.g3d_canvas.draw()
+
+    def _clear_3d(self):
+        self.g3d_ax.clear()
+        self._init_3d_axes()
+        self.g3d_output.setHtml('')
+
+    def _reset_3d_view(self):
+        self.g3d_ax.view_init(elev=25, azim=-60)
+        self.g3d_canvas.draw()
+
+    def _parse_3d_entry(self, entry):
+        """Return ('explicit', expr) or ('implicit', expr) where expr is the sympy expression.
+        For explicit: expr is z = f(x,y).
+        For implicit: expr is F(x,y,z) = 0 (LHS - RHS).
+        Also handles ^ as ** and strips leading 'z =' for explicit."""
+        x_s, y_s, z_s = sympy.Symbol('x'), sympy.Symbol('y'), sympy.Symbol('z')
+        raw = entry.replace('^', '**').strip()
+        if '=' in raw:
+            lhs_str, rhs_str = raw.split('=', 1)
+            lhs = sympy.sympify(lhs_str.strip())
+            rhs = sympy.sympify(rhs_str.strip())
+            full = lhs - rhs
+            # Explicit if lhs is z and z not in rhs free symbols
+            if lhs == z_s and z_s not in rhs.free_symbols:
+                return ('explicit', rhs)
+            return ('implicit', full)
+        else:
+            expr = sympy.sympify(raw)
+            if z_s in expr.free_symbols:
+                return ('implicit', expr)
+            return ('explicit', expr)
+
+    def plot_3d(self, plot_type):
+        from skimage.measure import marching_cubes
+
+        try:
+            x_s, y_s, z_s = sympy.Symbol('x'), sympy.Symbol('y'), sympy.Symbol('z')
+            cmap = self.g3d_cmap.currentText()
+            res = int(self.g3d_res.currentText().split()[0])
+
+            self.g3d_ax.clear()
+            self._init_3d_axes()
+
+            if plot_type == "parametric":
+                t_sym = sympy.Symbol('t')
+                t_min = float(sympy.sympify(self.g3d_tmin.text()).evalf())
+                t_max = float(sympy.sympify(self.g3d_tmax.text()).evalf())
+                t_vals = np.linspace(t_min, t_max, 600)
+                funcs = [
+                    sympy.lambdify(t_sym, sympy.sympify(self.g3d_xt.text().replace('^', '**')), 'numpy'),
+                    sympy.lambdify(t_sym, sympy.sympify(self.g3d_yt.text().replace('^', '**')), 'numpy'),
+                    sympy.lambdify(t_sym, sympy.sympify(self.g3d_zt.text().replace('^', '**')), 'numpy'),
+                ]
+                coords = []
+                for f in funcs:
+                    v = np.asarray(f(t_vals))
+                    if v.ndim == 0:
+                        v = np.full(t_vals.shape, float(v))
+                    coords.append(v.astype(float))
+                self.g3d_ax.plot(*coords, color='#88c0d0', linewidth=2)
+                self.g3d_ax.set_title("Parametric Curve", color='#eceff4', pad=4)
+                self.g3d_canvas.draw()
+                self.g3d_output.setHtml("<b>Parametric curve plotted</b>")
+                return
+
+            x_min = float(sympy.sympify(self.g3d_xmin.text()).evalf())
+            x_max = float(sympy.sympify(self.g3d_xmax.text()).evalf())
+            y_min = float(sympy.sympify(self.g3d_ymin.text()).evalf())
+            y_max = float(sympy.sympify(self.g3d_ymax.text()).evalf())
+            z_min = float(sympy.sympify(self.g3d_zmin.text()).evalf())
+            z_max = float(sympy.sympify(self.g3d_zmax.text()).evalf())
+
+            entries = [
+                ln.strip() for ln in self.g3d_expr_input.toPlainText().splitlines()
+                if ln.strip() and not ln.strip().startswith('#')
+            ]
+            WIRE_COLORS = ['#88c0d0', '#a3be8c', '#bf616a', '#ebcb8b']
+            plotted = 0
+            alpha = 0.9 if len(entries) == 1 else 0.72
+
+            for i, entry in enumerate(entries):
+                try:
+                    kind, expr = self._parse_3d_entry(entry)
+                except Exception as e:
+                    self.g3d_output.setHtml(f"<b style='color:#bf616a'>Parse error:</b> {e}")
+                    continue
+
+                try:
+                    if kind == 'implicit':
+                        # ── Marching-cubes path ───────────────────────────
+                        x_v = np.linspace(x_min, x_max, res)
+                        y_v = np.linspace(y_min, y_max, res)
+                        z_v = np.linspace(z_min, z_max, res)
+                        X3, Y3, Z3 = np.meshgrid(x_v, y_v, z_v, indexing='ij')
+                        fn = sympy.lambdify((x_s, y_s, z_s), expr, modules=['numpy'])
+                        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                            vol = np.asarray(fn(X3, Y3, Z3), dtype=float)
+                        finite = np.isfinite(vol)
+                        if not finite.any():
+                            raise ValueError("Expression is NaN/Inf everywhere in range")
+                        # Replace non-finite with a safe large value
+                        fill = np.nanmax(np.abs(vol[finite])) * 2 + 1
+                        vol[~finite] = fill
+
+                        verts, faces, _, _ = marching_cubes(vol, level=0)
+                        # Map grid indices → world coordinates
+                        verts[:, 0] = x_min + verts[:, 0] * (x_max - x_min) / (res - 1)
+                        verts[:, 1] = y_min + verts[:, 1] * (y_max - y_min) / (res - 1)
+                        verts[:, 2] = z_min + verts[:, 2] * (z_max - z_min) / (res - 1)
+
+                        self.g3d_ax.plot_trisurf(
+                            verts[:, 0], verts[:, 1], verts[:, 2],
+                            triangles=faces, cmap=cmap, alpha=alpha,
+                            linewidth=0, antialiased=True
+                        )
+
+                    else:
+                        # ── Explicit z = f(x,y) path ──────────────────────
+                        x_v = np.linspace(x_min, x_max, res)
+                        y_v = np.linspace(y_min, y_max, res)
+                        X, Y = np.meshgrid(x_v, y_v)
+                        fn = sympy.lambdify((x_s, y_s), expr, modules=['numpy'])
+                        with np.errstate(divide='ignore', invalid='ignore', over='ignore'):
+                            raw = np.asarray(fn(X, Y), dtype=complex)
+                        Z = np.where(np.abs(raw.imag) < 1e-9 * (1 + np.abs(raw.real)),
+                                     raw.real, np.nan).astype(float)
+                        Z[~np.isfinite(Z)] = np.nan
+
+                        if plot_type == "surface":
+                            self.g3d_ax.plot_surface(X, Y, Z, cmap=cmap, alpha=alpha,
+                                                     linewidth=0, antialiased=True)
+                        elif plot_type == "wireframe":
+                            stride = max(1, res // 20)
+                            self.g3d_ax.plot_wireframe(X, Y, Z,
+                                                       color=WIRE_COLORS[i % len(WIRE_COLORS)],
+                                                       linewidth=0.6, rstride=stride, cstride=stride)
+                        elif plot_type == "surface_contour":
+                            self.g3d_ax.plot_surface(X, Y, Z, cmap=cmap, alpha=0.75, linewidth=0)
+                            z_off = np.nanmin(Z) - (np.nanmax(Z) - np.nanmin(Z)) * 0.15
+                            self.g3d_ax.contourf(X, Y, Z, zdir='z', offset=z_off,
+                                                 cmap=cmap, alpha=0.55, levels=14)
+                        elif plot_type == "contourf":
+                            self.g3d_ax.contourf(X, Y, Z, cmap=cmap, alpha=0.9, levels=18)
+                            self.g3d_ax.contour(X, Y, Z, colors='#eceff4',
+                                                alpha=0.25, linewidths=0.5, levels=18)
+
+                except Exception as e:
+                    self.g3d_output.setHtml(f"<b style='color:#bf616a'>Error [{entry}]:</b> {e}")
+                    continue
+
+                plotted += 1
+
+            self.g3d_ax.set_title(
+                ", ".join(entries[:2]) + ("…" if len(entries) > 2 else ""),
+                color='#eceff4', fontsize=9, pad=4
+            )
+            self.g3d_canvas.draw()
+            self.g3d_output.setHtml(
+                f"<b>Plotted {plotted} surface(s)</b>  —  drag to rotate, scroll to zoom"
+            )
+
+        except Exception as e:
+            self.g3d_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+
+
+    def setup_number_theory_tab(self):
+        nt_widget = QWidget()
+        self.tabs.addTab(nt_widget, "Number Theory")
+
+        outer = QHBoxLayout(nt_widget)
+        outer.setContentsMargins(10, 10, 10, 10)
+        outer.setSpacing(12)
+
+        field_style = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 14px; padding: 6px;"
+        )
+        btn_style = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 36px;"
+        )
+
+        # ── LEFT: inputs + buttons ────────────────────────────────────────
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(10)
+
+        inp_grp = QGroupBox("Inputs")
+        ig = QGridLayout(inp_grp)
+        ig.setSpacing(6)
+        for row, (lbl, attr, default) in enumerate([
+            ("n:", "nt_n", "360"),
+            ("a:", "nt_a", "48"),
+            ("b / m:", "nt_b", "18"),
+        ]):
+            ig.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(field_style)
+            setattr(self, attr, w)
+            ig.addWidget(w, row, 1)
+        left_layout.addWidget(inp_grp)
+
+        # Single-n operations
+        single_grp = QGroupBox("Single Number  (n)")
+        sg = QGridLayout(single_grp)
+        sg.setSpacing(8)
+        single_ops = [
+            ("Is Prime?",        "is_prime"),
+            ("Factorize",        "factorize"),
+            ("Euler φ(n)",       "totient"),
+            ("Divisors",         "divisors"),
+            ("Divisor Count σ₀", "div_count"),
+            ("Divisor Sum σ₁",   "div_sum"),
+            ("Perfect/Abundant?","perfect"),
+            ("Next Prime",       "next_prime"),
+            ("nth Prime",        "nth_prime"),
+            ("Fibonacci(n)",     "fibonacci"),
+            ("Base Convert",     "base_convert"),
+            ("Collatz",          "collatz"),
+        ]
+        for idx, (lbl, act) in enumerate(single_ops):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_nt_op(a))
+            sg.addWidget(btn, idx // 2, idx % 2)
+        left_layout.addWidget(single_grp)
+
+        # Two-number operations
+        two_grp = QGroupBox("Two Numbers  (a,  b / m)")
+        tg = QGridLayout(two_grp)
+        tg.setSpacing(8)
+        two_ops = [
+            ("GCD(a, b)",        "gcd"),
+            ("LCM(a, b)",        "lcm"),
+            ("Extended GCD",     "ext_gcd"),
+            ("a mod m",          "mod"),
+            ("Mod Inverse a⁻¹",  "mod_inv"),
+            ("aⁿ mod m",         "mod_pow"),
+            ("Legendre (a/b)",   "legendre"),
+            ("Jacobi (a/b)",     "jacobi"),
+        ]
+        for idx, (lbl, act) in enumerate(two_ops):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_nt_op(a))
+            tg.addWidget(btn, idx // 2, idx % 2)
+        left_layout.addWidget(two_grp)
+
+        # Sequences
+        seq_grp = QGroupBox("Sequences  (up to n)")
+        sqg = QGridLayout(seq_grp)
+        sqg.setSpacing(8)
+        for idx, (lbl, act) in enumerate([
+            ("Primes ≤ n",        "primes_upto"),
+            ("π(x) Plot",         "prime_pi_plot"),
+        ]):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(lambda _, a=act: self.execute_nt_op(a))
+            sqg.addWidget(btn, 0, idx)
+        left_layout.addWidget(seq_grp)
+        left_layout.addStretch()
+        outer.addWidget(left, 2)
+
+        # ── RIGHT: plot + text output ─────────────────────────────────────
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        self.nt_fig = Figure(facecolor='#1e222b')
+        self.nt_canvas = FigureCanvas(self.nt_fig)
+        self.nt_canvas.setMaximumHeight(200)
+        self.nt_ax = self.nt_fig.subplots()
+        self._init_nt_axes()
+        right_layout.addWidget(self.nt_canvas)
+
+        out_grp = QGroupBox("Result")
+        ogl = QVBoxLayout(out_grp)
+        self.nt_output = QTextBrowser()
+        self.nt_output.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 8px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 13px; padding: 8px;"
+        )
+        ogl.addWidget(self.nt_output)
+        right_layout.addWidget(out_grp, 1)
+        outer.addWidget(right, 3)
+
+    def _init_nt_axes(self):
+        ax = self.nt_ax
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.7)
+        self.nt_fig.tight_layout(pad=0.8)
+        self.nt_canvas.draw()
+
+    def execute_nt_op(self, action):
+        import re as _re
+        import math
+
+        def _out(html):
+            self.nt_output.setHtml(html)
+            plain = _re.sub(r'<[^>]+>', '', html).strip()
+            self._add_to_global_history("Number Theory", action,
+                                        f"n={self.nt_n.text()} a={self.nt_a.text()} b={self.nt_b.text()}",
+                                        plain[:200])
+
+        def _ext_gcd(a, b):
+            old_r, r = a, b
+            old_s, s = 1, 0
+            while r:
+                q = old_r // r
+                old_r, r = r, old_r - q * r
+                old_s, s = s, old_s - q * s
+            t = (old_r - old_s * a) // b if b else 0
+            return old_s, t, old_r  # s, t, gcd  →  a*s + b*t = gcd
+
+        try:
+            n = int(sympy.sympify(self.nt_n.text()))
+            a = int(sympy.sympify(self.nt_a.text()))
+            b = int(sympy.sympify(self.nt_b.text()))
+
+            # ── Single-n ops ──────────────────────────────────────────────
+            if action == "is_prime":
+                if sympy.isprime(n):
+                    _out(f"<b style='color:#a3be8c'>{n:,} is PRIME ✓</b>")
+                else:
+                    factors = sympy.factorint(n)
+                    smallest = min(factors)
+                    _out(f"<b style='color:#bf616a'>{n:,} is NOT prime</b><br>"
+                         f"Smallest factor: {smallest}<br>"
+                         f"Factorization: {n:,} = " +
+                         " × ".join(f"{p}^{e}" if e > 1 else str(p)
+                                    for p, e in sorted(factors.items())))
+
+            elif action == "factorize":
+                factors = sympy.factorint(n)
+                html_parts = [f"{p}<sup>{e}</sup>" if e > 1 else str(p)
+                              for p, e in sorted(factors.items())]
+                plain_parts = [f"{p}^{e}" if e > 1 else str(p)
+                               for p, e in sorted(factors.items())]
+                _out(f"<b>{n:,} = {'  ×  '.join(html_parts)}</b><br>"
+                     f"{'  ×  '.join(plain_parts)}<br><br>"
+                     f"Prime factors: {dict(sorted(factors.items()))}")
+
+            elif action == "totient":
+                phi = int(sympy.totient(n))
+                _out(f"<b>φ({n:,}) = {phi:,}</b><br>"
+                     f"{phi:,} integers in [1, {n:,}] are coprime to {n:,}")
+
+            elif action == "divisors":
+                divs = sympy.divisors(n)
+                preview = ", ".join(f"{d:,}" for d in divs[:60])
+                suffix = f" … ({len(divs)} total)" if len(divs) > 60 else ""
+                _out(f"<b>Divisors of {n:,}  ({len(divs)} total):</b><br>{preview}{suffix}")
+
+            elif action == "div_count":
+                c = int(sympy.divisor_count(n))
+                _out(f"<b>σ₀({n:,}) = {c}</b><br>{n:,} has {c} positive divisors")
+
+            elif action == "div_sum":
+                s = int(sympy.divisor_sigma(n, 1))
+                proper = s - n
+                _out(f"<b>σ₁({n:,}) = {s:,}</b><br>"
+                     f"Sum of all divisors = {s:,}<br>"
+                     f"Sum of proper divisors = {proper:,}")
+
+            elif action == "perfect":
+                s = int(sympy.divisor_sigma(n, 1))
+                proper = s - n
+                if proper == n:
+                    _out(f"<b style='color:#a3be8c'>{n:,} is PERFECT</b><br>"
+                         f"Sum of proper divisors = {proper:,} = n")
+                elif proper > n:
+                    _out(f"<b style='color:#ebcb8b'>{n:,} is ABUNDANT</b><br>"
+                         f"Sum of proper divisors = {proper:,} > {n:,}<br>"
+                         f"Excess = {proper - n:,}")
+                else:
+                    _out(f"<b style='color:#81a1c1'>{n:,} is DEFICIENT</b><br>"
+                         f"Sum of proper divisors = {proper:,} < {n:,}<br>"
+                         f"Deficiency = {n - proper:,}")
+
+            elif action == "next_prime":
+                p = sympy.nextprime(n)
+                _out(f"<b>Next prime after {n:,} = {p:,}</b>")
+
+            elif action == "nth_prime":
+                if n > 1_000_000:
+                    _out("<b style='color:#bf616a'>n too large (max 1 000 000)</b>")
+                else:
+                    p = sympy.prime(n)
+                    _out(f"<b>Prime #{n:,} = {p:,}</b>")
+
+            elif action == "fibonacci":
+                if n > 10_000:
+                    _out("<b style='color:#bf616a'>n too large for display (max 10 000)</b>")
+                else:
+                    f_val = int(sympy.fibonacci(n))
+                    digits = len(str(f_val))
+                    preview = f"{f_val:,}" if digits <= 60 else str(f_val)[:57] + "…"
+                    _out(f"<b>F({n:,}) = {preview}</b><br>({digits} digits)")
+
+            elif action == "base_convert":
+                _out(
+                    f"<b>{n:,} in different bases:</b><br><br>"
+                    f"<b>Binary</b>   (base 2):   {bin(n)}<br>"
+                    f"<b>Octal</b>    (base 8):   {oct(n)}<br>"
+                    f"<b>Decimal</b>  (base 10): {n:,}<br>"
+                    f"<b>Hex</b>      (base 16): {hex(n).upper()}"
+                )
+
+            elif action == "collatz":
+                if n <= 0:
+                    raise ValueError("n must be positive")
+                seq = [n]
+                x = n
+                while x != 1 and len(seq) < 10_000:
+                    x = x // 2 if x % 2 == 0 else 3 * x + 1
+                    seq.append(x)
+                peak = max(seq)
+                steps = len(seq) - 1
+                preview = " → ".join(map(str, seq[:20]))
+                suffix = f" → … → 1  ({steps} steps)" if steps >= 20 else ""
+                _out(f"<b>Collatz sequence from {n:,}:</b><br>"
+                     f"Steps to reach 1: <b>{steps}</b><br>"
+                     f"Peak value: <b>{peak:,}</b><br><br>"
+                     f"{preview}{suffix}")
+                # Plot
+                self.nt_ax.clear()
+                self._init_nt_axes()
+                self.nt_ax.plot(seq, color='#88c0d0', linewidth=1.2)
+                self.nt_ax.set_title(f"Collatz: n={n:,}  ({steps} steps)", color='#eceff4', fontsize=9)
+                self.nt_canvas.draw()
+
+            # ── Two-number ops ────────────────────────────────────────────
+            elif action == "gcd":
+                g = math.gcd(a, b)
+                _out(f"<b>GCD({a:,}, {b:,}) = {g:,}</b>")
+
+            elif action == "lcm":
+                l = math.lcm(a, b)
+                _out(f"<b>LCM({a:,}, {b:,}) = {l:,}</b>")
+
+            elif action == "ext_gcd":
+                s, t, g = _ext_gcd(a, b)
+                _out(f"<b>Extended GCD({a:,}, {b:,})</b><br><br>"
+                     f"GCD = <b>{g:,}</b><br>"
+                     f"<b>{a:,}</b> × ({s}) + <b>{b:,}</b> × ({t}) = {g:,}<br>"
+                     f"(Bézout coefficients:  s = {s},  t = {t})<br>"
+                     f"Verify: {a*s + b*t} = {g}")
+
+            elif action == "mod":
+                r = a % b
+                q = a // b
+                _out(f"<b>{a:,} mod {b:,} = {r:,}</b><br>"
+                     f"{a:,} = {b:,} × {q:,} + {r:,}")
+
+            elif action == "mod_inv":
+                g = math.gcd(a, b)
+                if g != 1:
+                    _out(f"<b style='color:#bf616a'>No inverse exists:</b> "
+                         f"GCD({a}, {b}) = {g} ≠ 1")
+                else:
+                    inv = pow(a, -1, b)
+                    _out(f"<b>{a:,}⁻¹ mod {b:,} = {inv:,}</b><br>"
+                         f"Verify: {a:,} × {inv:,} mod {b:,} = {(a * inv) % b}")
+
+            elif action == "mod_pow":
+                # a^n mod b
+                result = pow(a, n, b)
+                _out(f"<b>{a:,}<sup>{n:,}</sup> mod {b:,} = {result:,}</b>")
+
+            elif action == "legendre":
+                if not sympy.isprime(b) or b == 2:
+                    _out("<b style='color:#bf616a'>b must be an odd prime for the Legendre symbol</b>")
+                else:
+                    sym = int(sympy.legendre_symbol(a, b))
+                    meaning = {
+                        1:  f"{a} is a quadratic residue mod {b}",
+                        -1: f"{a} is a quadratic non-residue mod {b}",
+                        0:  f"{b} divides {a}",
+                    }
+                    _out(f"<b>({a}/{b}) = {sym}</b><br>{meaning.get(sym, '')}")
+
+            elif action == "jacobi":
+                if b % 2 == 0 or b < 1:
+                    _out("<b style='color:#bf616a'>b must be a positive odd integer</b>")
+                else:
+                    sym = int(sympy.jacobi_symbol(a, b))
+                    _out(f"<b>({a}/{b})_J = {sym}</b>  (Jacobi symbol)")
+
+            # ── Sequences ─────────────────────────────────────────────────
+            elif action in ("primes_upto", "prime_pi_plot"):
+                limit = n
+                if limit > 200_000:
+                    _out("<b style='color:#bf616a'>n too large (max 200 000)</b>")
+                    return
+                primes = np.array(list(sympy.primerange(2, limit + 1)), dtype=np.int64)
+                xs = np.arange(2, limit + 1)
+                pi_vals = np.searchsorted(primes, xs, side='right')
+
+                self.nt_ax.clear()
+                self._init_nt_axes()
+                self.nt_ax.plot(xs, pi_vals, color='#88c0d0', linewidth=1.5, label='π(x)')
+                # x / ln(x) approximation
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    approx = np.where(xs >= 2, xs / np.log(xs.astype(float)), 0)
+                self.nt_ax.plot(xs, approx, color='#bf616a', linewidth=1,
+                                linestyle='--', label='x / ln x')
+                self.nt_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=8)
+                self.nt_ax.set_title(f"Prime counting π(x),  x ≤ {limit:,}",
+                                     color='#eceff4', fontsize=9)
+                self.nt_canvas.draw()
+
+                if action == "primes_upto":
+                    preview = ", ".join(f"{p:,}" for p in primes[:80])
+                    suffix = f", …" if len(primes) > 80 else ""
+                    _out(f"<b>Primes ≤ {limit:,}:  {len(primes):,} found</b><br><br>"
+                         f"{preview}{suffix}")
+                else:
+                    import math as _math
+                    _out(f"<b>π({limit:,}) = {len(primes):,}</b><br>"
+                         f"x/ln(x) ≈ {limit / _math.log(limit):.1f}")
+
+        except Exception as e:
+            self.nt_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Analysis tab  (Fourier · Special Functions · Complex Mapping · FA)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def setup_analysis_tab(self):
+        w = QWidget()
+        self.tabs.addTab(w, "Analysis")
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(4, 4, 4, 4)
+        self._an_tabs = QTabWidget()
+        outer.addWidget(self._an_tabs)
+        self._an_field = (
+            "background-color: #242933; border: 1px solid #3b4252; "
+            "border-radius: 8px; color: #eceff4; "
+            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+        )
+        self._an_btn = (
+            "font-size: 12px; font-weight: bold; "
+            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+        )
+        self._setup_fourier_subtab()
+        self._setup_special_functions_subtab()
+        self._setup_complex_mapping_subtab()
+        self._setup_functional_analysis_subtab()
+
+    # ── Fourier ────────────────────────────────────────────────────────────
+
+    def _setup_fourier_subtab(self):
+        tab = QWidget()
+        self._an_tabs.addTab(tab, "Fourier")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        # Fourier series
+        fs = QGroupBox("Fourier Series  of  f(x)  on  [−L, L]")
+        fsg = QGridLayout(fs)
+        fsg.setSpacing(6)
+        fsg.addWidget(QLabel("f(x) ="), 0, 0)
+        self.fs_expr = QLineEdit("x")
+        self.fs_expr.setStyleSheet(self._an_field)
+        fsg.addWidget(self.fs_expr, 0, 1)
+        fsg.addWidget(QLabel("L ="), 1, 0)
+        self.fs_L = QLineEdit("pi")
+        self.fs_L.setStyleSheet(self._an_field)
+        fsg.addWidget(self.fs_L, 1, 1)
+        fsg.addWidget(QLabel("Terms N ="), 2, 0)
+        self.fs_N = QLineEdit("8")
+        self.fs_N.setStyleSheet(self._an_field)
+        fsg.addWidget(self.fs_N, 2, 1)
+        for lbl, act in [("Plot Approximation", "series"), ("Show Coefficients", "coeffs")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._an_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_fourier(a))
+            fsg.addWidget(btn, fsg.rowCount(), 0, 1, 2)
+        ll.addWidget(fs)
+
+        # FFT
+        fft = QGroupBox("FFT  —  Discrete Signal")
+        fftg = QVBoxLayout(fft)
+        fftg.setSpacing(6)
+        hint = QLabel("Signal samples (comma / space separated):")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        fftg.addWidget(hint)
+        self.fft_data = QTextEdit("0,1,2,3,4,3,2,1,0,-1,-2,-3,-4,-3,-2,-1")
+        self.fft_data.setFixedHeight(52)
+        self.fft_data.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        fftg.addWidget(self.fft_data)
+        sr_row = QHBoxLayout()
+        sr_row.addWidget(QLabel("Sample rate (Hz):"))
+        self.fft_sr = QLineEdit("1")
+        self.fft_sr.setFixedWidth(70)
+        self.fft_sr.setStyleSheet(self._an_field)
+        sr_row.addWidget(self.fft_sr)
+        sr_row.addStretch()
+        fftg.addLayout(sr_row)
+        fft_btn = QPushButton("Compute FFT & Plot Spectrum")
+        fft_btn.setStyleSheet(self._an_btn)
+        fft_btn.clicked.connect(lambda: self._run_fourier("fft"))
+        fftg.addWidget(fft_btn)
+        ll.addWidget(fft)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.fourier_fig = Figure(facecolor='#1e222b')
+        self.fourier_canvas = FigureCanvas(self.fourier_fig)
+        rl.addWidget(self.fourier_canvas, 1)
+        self.fourier_output = QTextBrowser()
+        self.fourier_output.setMaximumHeight(90)
+        self.fourier_output.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        rl.addWidget(self.fourier_output)
+        outer.addWidget(right, 3)
+
+    def _run_fourier(self, action):
+        from scipy.integrate import quad as _quad
+        try:
+            if action in ("series", "coeffs"):
+                x_sym = sympy.Symbol('x')
+                expr = sympy.sympify(self.fs_expr.text())
+                L = float(sympy.sympify(self.fs_L.text()).evalf())
+                N = int(self.fs_N.text())
+                f = sympy.lambdify(x_sym, expr, 'numpy')
+
+                def safe_f(x):
+                    with np.errstate(all='ignore'):
+                        v = np.asarray(f(x), dtype=complex)
+                    return np.where(np.isfinite(v.real), v.real, 0.0)
+
+                a0 = (1/L) * _quad(safe_f, -L, L)[0]
+                an = [0.0] + [(1/L) * _quad(lambda x, n=n: safe_f(x) * np.cos(n*np.pi*x/L), -L, L)[0] for n in range(1, N+1)]
+                bn = [0.0] + [(1/L) * _quad(lambda x, n=n: safe_f(x) * np.sin(n*np.pi*x/L), -L, L)[0] for n in range(1, N+1)]
+
+                xs = np.linspace(-L, L, 800)
+
+                fig = self.fourier_fig
+                fig.clear()
+                if action == "series":
+                    ax = fig.add_subplot(111)
+                    ax.set_facecolor('#242933')
+                    ax.tick_params(colors='#eceff4', labelsize=8)
+                    ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+                    for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+
+                    S = np.full_like(xs, a0/2)
+                    for n in range(1, N+1):
+                        S += an[n]*np.cos(n*np.pi*xs/L) + bn[n]*np.sin(n*np.pi*xs/L)
+
+                    ax.plot(xs, safe_f(xs), color='#eceff4', linewidth=1.5, label='f(x)', alpha=0.7)
+                    ax.plot(xs, S, color='#88c0d0', linewidth=2, label=f'S_{N}(x)')
+                    ax.axhline(0, color='#4c566a', linewidth=0.5)
+                    ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                    ax.set_title(f"Fourier series  N={N},  L={L:.4g}", color='#eceff4', fontsize=9)
+                    self.fourier_output.setHtml(
+                        f"<b>a₀ = {a0:.5g}</b><br>" +
+                        "  ".join(f"a<sub>{n}</sub>={an[n]:.3g}" for n in range(1, min(N+1, 6))) + "<br>" +
+                        "  ".join(f"b<sub>{n}</sub>={bn[n]:.3g}" for n in range(1, min(N+1, 6)))
+                    )
+                else:  # coeffs bar chart
+                    ax1, ax2 = fig.subplots(2, 1)
+                    for ax in (ax1, ax2):
+                        ax.set_facecolor('#242933')
+                        ax.tick_params(colors='#eceff4', labelsize=7)
+                        ax.grid(color='#2e3440', linestyle='--', linewidth=0.5)
+                        for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+                    ns = list(range(N+1))
+                    ax1.bar(ns, an, color='#88c0d0', alpha=0.85)
+                    ax1.set_title("aₙ coefficients", color='#eceff4', fontsize=9)
+                    ax2.bar(ns, bn, color='#a3be8c', alpha=0.85)
+                    ax2.set_title("bₙ coefficients", color='#eceff4', fontsize=9)
+                    fig.tight_layout(pad=0.8)
+                    self.fourier_output.setHtml(
+                        f"<b>Coefficients a₀…a{N} and b₁…b{N}</b>"
+                    )
+
+            elif action == "fft":
+                raw = self.fft_data.toPlainText().replace(',', ' ').split()
+                signal = np.array([float(x) for x in raw])
+                sr = float(self.fft_sr.text())
+                N = len(signal)
+                spectrum = np.fft.rfft(signal)
+                freqs = np.fft.rfftfreq(N, d=1.0/sr)
+                power = np.abs(spectrum)
+                dom_idx = np.argmax(power[1:]) + 1
+                dom_freq = freqs[dom_idx]
+
+                fig = self.fourier_fig
+                fig.clear()
+                ax1, ax2 = fig.subplots(2, 1)
+                for ax in (ax1, ax2):
+                    ax.set_facecolor('#242933')
+                    ax.tick_params(colors='#eceff4', labelsize=8)
+                    ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+                    for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+                ax1.plot(signal, color='#88c0d0', linewidth=1.8, marker='o', markersize=3)
+                ax1.set_title("Signal (time domain)", color='#eceff4', fontsize=9)
+                ax2.bar(freqs, power, width=freqs[1]-freqs[0] if len(freqs)>1 else 1,
+                        color='#a3be8c', alpha=0.85, align='edge')
+                ax2.set_title("Frequency spectrum  |X(f)|", color='#eceff4', fontsize=9)
+                ax2.set_xlabel("Frequency (Hz)", color='#81a1c1', fontsize=8)
+                fig.tight_layout(pad=0.8)
+                self.fourier_output.setHtml(
+                    f"<b>N = {N} samples,  sr = {sr} Hz</b><br>"
+                    f"Dominant frequency: <b>{dom_freq:.4g} Hz</b>  (|X| = {power[dom_idx]:.4g})"
+                )
+
+            self.fourier_canvas.draw()
+            self._add_to_global_history("Analysis·Fourier", action,
+                                        self.fs_expr.text(), self.fourier_output.toPlainText()[:150])
+        except Exception as e:
+            self.fourier_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Special Functions ──────────────────────────────────────────────────
+
+    def _setup_special_functions_subtab(self):
+        tab = QWidget()
+        self._an_tabs.addTab(tab, "Special Functions")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        sel_grp = QGroupBox("Function")
+        sg = QGridLayout(sel_grp)
+        sg.setSpacing(6)
+        sg.addWidget(QLabel("Function:"), 0, 0)
+        self.sf_combo = QComboBox()
+        self.sf_combo.addItems([
+            "Gamma  Γ(x)", "Digamma  ψ(x)", "Log-Gamma  ln Γ(x)",
+            "Riemann Zeta  ζ(s)", "Error function  erf(x)", "Erfc(x)",
+            "Bessel J_n(x)", "Bessel Y_n(x)", "Bessel I_n(x)", "Bessel K_n(x)",
+            "Airy Ai(x)", "Airy Bi(x)",
+            "Lambert W(x)", "Beta  B(x,n)",
+        ])
+        self.sf_combo.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 4px; font-size: 12px;"
+        )
+        sg.addWidget(self.sf_combo, 0, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("x =",     "sf_x",    "2.5"),
+            ("n / p2 =","sf_n",    "0"),
+            ("x min:",  "sf_xmin", "-4"),
+            ("x max:",  "sf_xmax", "6"),
+        ], start=1):
+            sg.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._an_field)
+            setattr(self, attr, w)
+            sg.addWidget(w, row, 1)
+
+        for lbl, act in [("Evaluate at x", "eval"), ("Plot over range", "plot")]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._an_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_sf(a))
+            sg.addWidget(btn, sg.rowCount(), 0, 1, 2)
+        ll.addWidget(sel_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(8)
+        self.sf_result_latex = LatexCanvas(height=90)
+        rl.addWidget(self.sf_result_latex)
+        rl.addWidget(self._copy_latex_btn(self.sf_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
+        self.sf_fig = Figure(facecolor='#1e222b')
+        self.sf_canvas = FigureCanvas(self.sf_fig)
+        self.sf_ax = self.sf_fig.subplots()
+        self._init_sf_axes()
+        rl.addWidget(self.sf_canvas, 1)
+        outer.addWidget(right, 3)
+
+    def _init_sf_axes(self):
+        ax = self.sf_ax
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        self.sf_fig.tight_layout(pad=0.8)
+        self.sf_canvas.draw()
+
+    def _run_sf(self, action):
+        from scipy import special as sc
+        import warnings
+        try:
+            name = self.sf_combo.currentText()
+            x_val = float(sympy.sympify(self.sf_x.text()).evalf())
+            n_val = float(sympy.sympify(self.sf_n.text()).evalf())
+            x_min = float(sympy.sympify(self.sf_xmin.text()).evalf())
+            x_max = float(sympy.sympify(self.sf_xmax.text()).evalf())
+
+            # Map combo → (scipy eval fn, plot fn, latex name, needs_n)
+            def _gamma(x, _):    return sc.gamma(x)
+            def _digamma(x, _):  return sc.digamma(x)
+            def _lgamma(x, _):   return sc.gammaln(x)
+            def _zeta(x, _):     return sc.zeta(x)
+            def _erf(x, _):      return sc.erf(x)
+            def _erfc(x, _):     return sc.erfc(x)
+            def _jv(x, n):       return sc.jv(n, x)
+            def _yv(x, n):       return sc.yv(n, x)
+            def _iv(x, n):       return sc.iv(n, x)
+            def _kv(x, n):       return sc.kv(n, x)
+            def _ai(x, _):       return sc.airy(x)[0]
+            def _bi(x, _):       return sc.airy(x)[2]
+            def _w(x, _):        return np.real(sc.lambertw(x))
+            def _beta(x, n):     return sc.beta(x, n)
+
+            fn_map = {
+                "Gamma  Γ(x)":          (_gamma,  r"\Gamma(x)"),
+                "Digamma  ψ(x)":        (_digamma, r"\psi(x)"),
+                "Log-Gamma  ln Γ(x)":   (_lgamma,  r"\ln\Gamma(x)"),
+                "Riemann Zeta  ζ(s)":   (_zeta,    r"\zeta(s)"),
+                "Error function  erf(x)":(_erf,    r"\mathrm{erf}(x)"),
+                "Erfc(x)":              (_erfc,    r"\mathrm{erfc}(x)"),
+                "Bessel J_n(x)":        (_jv,      r"J_n(x)"),
+                "Bessel Y_n(x)":        (_yv,      r"Y_n(x)"),
+                "Bessel I_n(x)":        (_iv,      r"I_n(x)"),
+                "Bessel K_n(x)":        (_kv,      r"K_n(x)"),
+                "Airy Ai(x)":           (_ai,      r"\mathrm{Ai}(x)"),
+                "Airy Bi(x)":           (_bi,      r"\mathrm{Bi}(x)"),
+                "Lambert W(x)":         (_w,       r"W(x)"),
+                "Beta  B(x,n)":         (_beta,    r"B(x,n)"),
+            }
+            fn, latex_name = fn_map[name]
+
+            if action == "eval":
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    result = fn(x_val, n_val)
+                self.sf_result_latex.render(
+                    latex_name.replace("x", f"{x_val:.4g}").replace("n", f"{n_val:.4g}")
+                    + r" = " + f"{float(np.real(result)):.8g}"
+                )
+                self._add_to_global_history("Analysis·Special", name,
+                                            f"x={x_val}, n={n_val}", f"{float(np.real(result)):.8g}")
+
+            elif action == "plot":
+                xs = np.linspace(x_min, x_max, 600)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    ys = np.asarray([fn(xi, n_val) for xi in xs], dtype=float)
+                ys[~np.isfinite(ys)] = np.nan
+                # Clip extreme values for display
+                finite = ys[np.isfinite(ys)]
+                if len(finite):
+                    lo, hi = np.percentile(finite, 2), np.percentile(finite, 98)
+                    ys = np.clip(ys, lo - abs(hi-lo), hi + abs(hi-lo))
+
+                self.sf_ax.clear()
+                self._init_sf_axes()
+                n_label = f"(n={n_val:.4g})" if "Bessel" in name or "Beta" in name else ""
+                self.sf_ax.plot(xs, ys, color='#88c0d0', linewidth=2)
+                self.sf_ax.axhline(0, color='#4c566a', linewidth=0.8)
+                self.sf_ax.axvline(0, color='#4c566a', linewidth=0.8)
+                self.sf_ax.set_title(f"{name} {n_label}", color='#eceff4', fontsize=9)
+                self.sf_ax.set_xlabel("x", color='#81a1c1', fontsize=8)
+                self.sf_canvas.draw()
+                self.sf_result_latex.render(latex_name + r"\text{ on } [" +
+                                            f"{x_min:.4g}" + r",\," + f"{x_max:.4g}" + r"]")
+
+        except Exception as e:
+            self.sf_result_latex.render(r"\text{Error: }" + str(e)[:40])
+
+    # ── Complex Mapping ────────────────────────────────────────────────────
+
+    def _setup_complex_mapping_subtab(self):
+        tab = QWidget()
+        self._an_tabs.addTab(tab, "Complex Mapping")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        fn_grp = QGroupBox("Holomorphic function  f(z)")
+        fg = QGridLayout(fn_grp)
+        fg.setSpacing(6)
+        hint = QLabel("Use z as variable.  Examples:  z**2   exp(z)   1/z   (z-1)/(z+1)   sin(z)")
+        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setWordWrap(True)
+        fg.addWidget(hint, 0, 0, 1, 2)
+        fg.addWidget(QLabel("f(z) ="), 1, 0)
+        self.cm_expr = QLineEdit("z**2")
+        self.cm_expr.setStyleSheet(self._an_field)
+        fg.addWidget(self.cm_expr, 1, 1)
+
+        for row, (lbl, attr, default) in enumerate([
+            ("Re min:", "cm_remin", "-2"), ("Re max:", "cm_remax", "2"),
+            ("Im min:", "cm_immin", "-2"), ("Im max:", "cm_immax", "2"),
+        ], start=2):
+            fg.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setFixedWidth(64)
+            w.setStyleSheet(self._an_field)
+            setattr(self, attr, w)
+            fg.addWidget(w, row, 1)
+
+        fg.addWidget(QLabel("Resolution:"), 6, 0)
+        self.cm_res = QComboBox()
+        self.cm_res.addItems(["200  (fast)", "350", "500  (detailed)"])
+        self.cm_res.setStyleSheet(
+            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+            "border-radius: 6px; padding: 3px; font-size: 12px;"
+        )
+        fg.addWidget(self.cm_res, 6, 1)
+        ll.addWidget(fn_grp)
+
+        viz_grp = QGroupBox("Visualisation")
+        vg = QGridLayout(viz_grp)
+        vg.setSpacing(8)
+        for idx, (lbl, act) in enumerate([
+            ("Domain Colouring",  "domain"),
+            ("Grid Mapping",      "grid"),
+            ("Phase Portrait",    "phase"),
+            ("Modulus Surface",   "modulus"),
+        ]):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._an_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_complex_map(a))
+            vg.addWidget(btn, idx // 2, idx % 2)
+        ll.addWidget(viz_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        self.cm_fig = Figure(facecolor='#1e222b')
+        self.cm_canvas = FigureCanvas(self.cm_fig)
+        rl.addWidget(self.cm_canvas, 1)
+        self.cm_output = QTextBrowser()
+        self.cm_output.setMaximumHeight(36)
+        self.cm_output.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 4px;"
+        )
+        rl.addWidget(self.cm_output)
+        outer.addWidget(right, 3)
+
+    def _run_complex_map(self, viz):
+        try:
+            z_sym = sympy.Symbol('z')
+            expr = sympy.sympify(self.cm_expr.text().replace('^', '**'))
+            f = sympy.lambdify(z_sym, expr, modules=['numpy'])
+            res = int(self.cm_res.currentText().split()[0])
+
+            re_min = float(self.cm_remin.text()); re_max = float(self.cm_remax.text())
+            im_min = float(self.cm_immin.text()); im_max = float(self.cm_immax.text())
+
+            re_vals = np.linspace(re_min, re_max, res)
+            im_vals = np.linspace(im_min, im_max, res)
+            X, Y = np.meshgrid(re_vals, im_vals)
+            Z = X + 1j * Y
+
+            with np.errstate(all='ignore'):
+                W = np.asarray(f(Z), dtype=complex)
+            W[~np.isfinite(np.abs(W))] = np.nan
+
+            self.cm_fig.clear()
+            ax = self.cm_fig.add_subplot(111)
+            ax.set_facecolor('#1e222b')
+            ax.tick_params(colors='#eceff4', labelsize=8)
+            for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+
+            if viz in ("domain", "phase"):
+                from matplotlib.colors import hsv_to_rgb
+                angle = np.angle(W)
+                hue = (angle / (2 * np.pi)) % 1.0
+                if viz == "domain":
+                    # brightness encodes modulus (zeros dark, poles bright)
+                    mod = np.abs(W)
+                    val = 2/np.pi * np.arctan(np.where(np.isfinite(mod), mod, 0))
+                    # Checkerboard isochromatic lines on |f|
+                    k = np.floor(np.log2(mod + 1e-12))
+                    val = val * (0.8 + 0.2 * (k % 2))
+                else:
+                    # Pure phase portrait — constant brightness
+                    val = np.ones_like(hue) * 0.85
+                sat = np.ones_like(hue) * 0.9
+                hue = np.where(np.isfinite(hue), hue, 0)
+                val = np.where(np.isfinite(val), val, 0)
+                rgb = hsv_to_rgb(np.dstack([hue, sat, val]))
+                ax.imshow(rgb, extent=[re_min, re_max, im_min, im_max],
+                          origin='lower', aspect='auto', interpolation='bilinear')
+                ax.set_xlabel("Re(z)", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("Im(z)", color='#81a1c1', fontsize=8)
+                ax.set_title(
+                    f"{'Domain colouring' if viz=='domain' else 'Phase portrait'}  f(z) = {self.cm_expr.text()}",
+                    color='#eceff4', fontsize=9
+                )
+
+            elif viz == "grid":
+                ax.set_facecolor('#242933')
+                ax.grid(color='#2e3440', linestyle='--', linewidth=0.4)
+                n_lines = 16
+                # Vertical lines → blue family
+                for re_v in np.linspace(re_min, re_max, n_lines):
+                    im_v = np.linspace(im_min, im_max, 300)
+                    z_line = re_v + 1j * im_v
+                    with np.errstate(all='ignore'):
+                        w_line = np.asarray(f(z_line), dtype=complex)
+                    mask = np.isfinite(np.abs(w_line))
+                    segs = np.where(np.diff(mask.astype(int)))[0]
+                    starts = [0] + list(segs + 1)
+                    ends = list(segs + 1) + [len(w_line)]
+                    for s, e in zip(starts, ends):
+                        if e - s > 1 and mask[s]:
+                            ax.plot(w_line[s:e].real, w_line[s:e].imag, color='#88c0d0', linewidth=0.7, alpha=0.8)
+                # Horizontal lines → green family
+                for im_v in np.linspace(im_min, im_max, n_lines):
+                    re_v = np.linspace(re_min, re_max, 300)
+                    z_line = re_v + 1j * im_v
+                    with np.errstate(all='ignore'):
+                        w_line = np.asarray(f(z_line), dtype=complex)
+                    mask = np.isfinite(np.abs(w_line))
+                    segs = np.where(np.diff(mask.astype(int)))[0]
+                    starts = [0] + list(segs + 1)
+                    ends = list(segs + 1) + [len(w_line)]
+                    for s, e in zip(starts, ends):
+                        if e - s > 1 and mask[s]:
+                            ax.plot(w_line[s:e].real, w_line[s:e].imag, color='#a3be8c', linewidth=0.7, alpha=0.8)
+                ax.set_xlabel("Re(w)", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("Im(w)", color='#81a1c1', fontsize=8)
+                ax.set_title(f"Grid mapping  f(z) = {self.cm_expr.text()}", color='#eceff4', fontsize=9)
+
+            elif viz == "modulus":
+                mod = np.abs(W)
+                finite = np.isfinite(mod)
+                if finite.any():
+                    clip = np.nanpercentile(mod[finite], 98)
+                    mod = np.clip(mod, 0, clip)
+                ax.contourf(X, Y, mod, levels=40, cmap='viridis')
+                ax.contour(X, Y, mod, levels=15, colors='white', linewidths=0.3, alpha=0.3)
+                ax.set_xlabel("Re(z)", color='#81a1c1', fontsize=8)
+                ax.set_ylabel("Im(z)", color='#81a1c1', fontsize=8)
+                ax.set_title(f"|f(z)|  for  f(z) = {self.cm_expr.text()}", color='#eceff4', fontsize=9)
+
+            self.cm_fig.tight_layout(pad=0.5)
+            self.cm_canvas.draw()
+            self.cm_output.setHtml(f"<b>f(z) = {self.cm_expr.text()}</b>  —  {viz}")
+            self._add_to_global_history("Analysis·Complex", viz, f"f(z)={self.cm_expr.text()}", viz)
+
+        except Exception as e:
+            self.cm_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+
+    # ── Functional Analysis ────────────────────────────────────────────────
+
+    def _setup_functional_analysis_subtab(self):
+        tab = QWidget()
+        self._an_tabs.addTab(tab, "Functional Analysis")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(10)
+
+        fn_grp = QGroupBox("Functions")
+        fg = QGridLayout(fn_grp)
+        fg.setSpacing(6)
+        for row, (lbl, attr, default) in enumerate([
+            ("f(x) =", "fa_f", "sin(x)"),
+            ("g(x) =", "fa_g", "cos(x)"),
+            ("a =",    "fa_a", "0"),
+            ("b =",    "fa_b", "2*pi"),
+            ("p =",    "fa_p", "2"),
+        ]):
+            fg.addWidget(QLabel(lbl), row, 0)
+            w = QLineEdit(default)
+            w.setStyleSheet(self._an_field)
+            setattr(self, attr, w)
+            fg.addWidget(w, row, 1)
+        ll.addWidget(fn_grp)
+
+        ops_grp = QGroupBox("Operations")
+        og = QGridLayout(ops_grp)
+        og.setSpacing(8)
+        fa_ops = [
+            ("||f||_p  Lp Norm",        "lp_norm"),
+            ("||f||_∞  Sup Norm",        "sup_norm"),
+            ("⟨f, g⟩  Inner Product",   "inner"),
+            ("d(f,g)  L2 Distance",      "l2_dist"),
+            ("Convolution  f ★ g",       "convolve"),
+            ("Plot f and g",             "plot_both"),
+        ]
+        for idx, (lbl, act) in enumerate(fa_ops):
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._an_btn)
+            btn.clicked.connect(lambda _, a=act: self._run_fa(a))
+            og.addWidget(btn, idx // 2, idx % 2)
+        ll.addWidget(ops_grp)
+        ll.addStretch()
+        outer.addWidget(left, 2)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(8)
+        self.fa_result_latex = LatexCanvas(height=90)
+        rl.addWidget(self.fa_result_latex)
+        rl.addWidget(self._copy_latex_btn(self.fa_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
+        self.fa_fig = Figure(facecolor='#1e222b')
+        self.fa_canvas = FigureCanvas(self.fa_fig)
+        self.fa_ax = self.fa_fig.subplots()
+        self._init_fa_axes()
+        rl.addWidget(self.fa_canvas, 1)
+        outer.addWidget(right, 3)
+
+    def _init_fa_axes(self):
+        ax = self.fa_ax
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        self.fa_fig.tight_layout(pad=0.8)
+        self.fa_canvas.draw()
+
+    def _run_fa(self, action):
+        from scipy.integrate import quad as _quad
+        try:
+            x_sym = sympy.Symbol('x')
+            f_expr = sympy.sympify(self.fa_f.text())
+            g_expr = sympy.sympify(self.fa_g.text())
+            a = float(sympy.sympify(self.fa_a.text()).evalf())
+            b = float(sympy.sympify(self.fa_b.text()).evalf())
+            p = float(self.fa_p.text())
+
+            f_num = sympy.lambdify(x_sym, f_expr, 'numpy')
+            g_num = sympy.lambdify(x_sym, g_expr, 'numpy')
+
+            def safe(fn, x):
+                with np.errstate(all='ignore'):
+                    v = np.asarray(fn(x), dtype=complex)
+                return np.where(np.isfinite(v.real), v.real, 0.0)
+
+            xs = np.linspace(a, b, 800)
+            f_vals = safe(f_num, xs)
+            g_vals = safe(g_num, xs)
+
+            def _plot_refresh():
+                self.fa_ax.clear()
+                self._init_fa_axes()
+                self.fa_ax.plot(xs, f_vals, color='#88c0d0', linewidth=2, label='f(x)')
+                self.fa_ax.plot(xs, g_vals, color='#a3be8c', linewidth=2, label='g(x)', linestyle='--')
+                self.fa_ax.axhline(0, color='#4c566a', linewidth=0.6)
+                self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                self.fa_ax.set_title(f"[{a:.4g}, {b:.4g}]", color='#eceff4', fontsize=9)
+                self.fa_canvas.draw()
+
+            if action == "lp_norm":
+                integrand = lambda x: abs(safe(f_num, np.array([x]))[0]) ** p
+                val = _quad(integrand, a, b)[0] ** (1/p)
+                self.fa_result_latex.render(
+                    r"\|f\|_{" + f"{p:.4g}" + r"} = \left(\int_a^b |f|^p\,dx\right)^{1/p} = " + f"{val:.6g}"
+                )
+                _plot_refresh()
+                self._add_to_global_history("Analysis·FA", "Lp norm", self.fa_f.text(), f"{val:.6g}")
+
+            elif action == "sup_norm":
+                val = np.max(np.abs(f_vals))
+                self.fa_result_latex.render(
+                    r"\|f\|_{\infty} = \sup_{x \in [a,b]} |f(x)| = " + f"{val:.6g}"
+                )
+                _plot_refresh()
+                self.fa_ax.axhline(val, color='#bf616a', linestyle=':', linewidth=1.2, label=f'‖f‖∞={val:.4g}')
+                self.fa_ax.axhline(-val, color='#bf616a', linestyle=':', linewidth=1.2)
+                self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                self.fa_canvas.draw()
+                self._add_to_global_history("Analysis·FA", "sup norm", self.fa_f.text(), f"{val:.6g}")
+
+            elif action == "inner":
+                integrand = lambda x: safe(f_num, np.array([x]))[0] * safe(g_num, np.array([x]))[0]
+                val = _quad(integrand, a, b)[0]
+                self.fa_result_latex.render(
+                    r"\langle f,g \rangle = \int_a^b f(x)\,g(x)\,dx = " + f"{val:.6g}"
+                )
+                _plot_refresh()
+                prod_vals = f_vals * g_vals
+                self.fa_ax.fill_between(xs, prod_vals, alpha=0.25, color='#ebcb8b', label='f·g')
+                self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                self.fa_canvas.draw()
+                self._add_to_global_history("Analysis·FA", "inner product",
+                                            f"{self.fa_f.text()}, {self.fa_g.text()}", f"{val:.6g}")
+
+            elif action == "l2_dist":
+                integrand = lambda x: (safe(f_num, np.array([x]))[0] - safe(g_num, np.array([x]))[0])**2
+                val = _quad(integrand, a, b)[0] ** 0.5
+                self.fa_result_latex.render(
+                    r"d_{L^2}(f,g) = \|f-g\|_2 = " + f"{val:.6g}"
+                )
+                _plot_refresh()
+                diff_vals = f_vals - g_vals
+                ax2 = self.fa_ax.twinx()
+                ax2.fill_between(xs, diff_vals, alpha=0.3, color='#bf616a', label='f−g')
+                ax2.tick_params(colors='#bf616a', labelsize=7)
+                ax2.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9, loc='upper right')
+                self.fa_canvas.draw()
+                self._add_to_global_history("Analysis·FA", "L2 distance",
+                                            f"{self.fa_f.text()}, {self.fa_g.text()}", f"{val:.6g}")
+
+            elif action == "convolve":
+                dx = (b - a) / (len(xs) - 1)
+                conv = np.convolve(f_vals, g_vals, mode='full') * dx
+                t_conv = np.linspace(2*a, 2*b, len(conv))
+                self.fa_ax.clear()
+                self._init_fa_axes()
+                self.fa_ax.plot(xs, f_vals, color='#88c0d0', linewidth=1.5, label='f(x)', alpha=0.6)
+                self.fa_ax.plot(xs, g_vals, color='#a3be8c', linewidth=1.5, label='g(x)', alpha=0.6, linestyle='--')
+                self.fa_ax.plot(t_conv, conv, color='#ebcb8b', linewidth=2, label='(f★g)(t)')
+                self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                self.fa_ax.set_title("Convolution  (f★g)(t)", color='#eceff4', fontsize=9)
+                self.fa_canvas.draw()
+                self.fa_result_latex.render(r"(f \star g)(t) = \int f(\tau)\,g(t-\tau)\,d\tau")
+                self._add_to_global_history("Analysis·FA", "convolution",
+                                            f"{self.fa_f.text()}, {self.fa_g.text()}", "plotted")
+
+            elif action == "plot_both":
+                _plot_refresh()
+                self.fa_result_latex.render(
+                    r"f(x) = " + sympy.latex(f_expr) + r"\qquad g(x) = " + sympy.latex(g_expr)
+                )
+
+        except Exception as e:
+            self.fa_result_latex.render(r"\text{Error: }" + str(e)[:40])
+
+    # ── Global history ────────────────────────────────────────────────────
+
+    def _load_history(self):
+        try:
+            if os.path.exists(self._history_file):
+                with open(self._history_file, 'r', encoding='utf-8') as f:
+                    self._global_history = json.load(f)
+        except Exception:
+            self._global_history = []
+
+    def _save_history(self):
+        try:
+            with open(self._history_file, 'w', encoding='utf-8') as f:
+                json.dump(self._global_history[-500:], f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _add_to_global_history(self, tab, action, input_str, result_str):
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "tab": tab,
+            "action": action,
+            "input": str(input_str)[:200],
+            "result": str(result_str)[:300],
+        }
+        self._global_history.insert(0, entry)
+        self._global_history = self._global_history[:500]
+        self._save_history()
+        if hasattr(self, '_history_list_widget'):
+            self._history_list_widget.insertItem(0, self._make_history_item(entry))
+
+    def _make_history_item(self, entry):
+        from PyQt6.QtWidgets import QListWidgetItem
+        ts = entry["timestamp"][11:]  # just time HH:MM:SS
+        text = f"[{ts}]  {entry['tab']}  ·  {entry['action']}\n  {entry['input'][:60]}  →  {entry['result'][:80]}"
+        item = QListWidgetItem(text)
+        item.setData(Qt.ItemDataRole.UserRole, entry)
+        return item
+
+    def setup_history_tab(self):
+        hist_widget = QWidget()
+        self.tabs.addTab(hist_widget, "History")
+
+        layout = QVBoxLayout(hist_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        # Search bar
+        search_row = QHBoxLayout()
+        search_row.addWidget(QLabel("Filter:"))
+        self._history_search = QLineEdit()
+        self._history_search.setPlaceholderText("Type to filter by tab, operation, or expression…")
+        self._history_search.setStyleSheet(
+            "background-color: #242933; border: 1px solid #3b4252; border-radius: 8px; "
+            "color: #eceff4; font-size: 13px; padding: 6px;"
+        )
+        self._history_search.textChanged.connect(self._filter_history)
+        search_row.addWidget(self._history_search)
+        layout.addLayout(search_row)
+
+        # List
+        self._history_list_widget = QListWidget()
+        self._history_list_widget.setObjectName("historyList")
+        self._history_list_widget.setStyleSheet("""
+            QListWidget { background-color: #1e222b; border: 1px solid #2e3440;
+                          border-radius: 8px; color: #eceff4; font-size: 12px; }
+            QListWidget::item { background-color: #242933; border-radius: 6px;
+                                margin: 2px 4px; padding: 6px 8px; }
+            QListWidget::item:hover { background-color: #2e3440; }
+            QListWidget::item:selected { background-color: #3b4a6b; color: #88c0d0; }
+        """)
+        self._history_list_widget.setSpacing(2)
+        self._history_list_widget.itemDoubleClicked.connect(self._history_copy_result)
+
+        for entry in self._global_history:
+            self._history_list_widget.addItem(self._make_history_item(entry))
+
+        layout.addWidget(self._history_list_widget, 1)
+
+        hint = QLabel("Double-click an entry to copy the result to clipboard.")
+        hint.setStyleSheet("color: #4c566a; font-size: 11px;")
+        layout.addWidget(hint)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_style = (
+            "font-size: 12px; font-weight: bold; min-height: 34px; "
+            "background-color: #2e3440; color: #81a1c1; "
+            "border: 1px solid #3b4252; border-radius: 8px; padding: 0 12px;"
+        )
+        clear_btn = QPushButton("Clear History")
+        clear_btn.setStyleSheet(btn_style)
+        clear_btn.clicked.connect(self._clear_global_history)
+        export_btn = QPushButton("Export to .txt")
+        export_btn.setStyleSheet(btn_style)
+        export_btn.clicked.connect(self._export_history)
+        btn_row.addWidget(clear_btn)
+        btn_row.addWidget(export_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+    def _history_copy_result(self, item):
+        entry = item.data(Qt.ItemDataRole.UserRole)
+        if entry:
+            QApplication.clipboard().setText(entry.get("result", ""))
+
+    def _filter_history(self, text):
+        text = text.lower()
+        for i in range(self._history_list_widget.count()):
+            item = self._history_list_widget.item(i)
+            entry = item.data(Qt.ItemDataRole.UserRole)
+            visible = (
+                not text or
+                text in entry.get("tab", "").lower() or
+                text in entry.get("action", "").lower() or
+                text in entry.get("input", "").lower() or
+                text in entry.get("result", "").lower()
+            )
+            item.setHidden(not visible)
+
+    def _clear_global_history(self):
+        self._global_history = []
+        self._history_list_widget.clear()
+        self._save_history()
+
+    def _export_history(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'history_export.txt')
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                for entry in self._global_history:
+                    f.write(f"[{entry['timestamp']}]  {entry['tab']}  ·  {entry['action']}\n")
+                    f.write(f"  Input:  {entry['input']}\n")
+                    f.write(f"  Result: {entry['result']}\n\n")
+            self._history_search.setPlaceholderText(f"Exported to {path}")
+        except Exception as e:
+            self._history_search.setPlaceholderText(f"Export failed: {e}")
 
 
 if __name__ == "__main__":
