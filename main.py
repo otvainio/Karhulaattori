@@ -1,18 +1,52 @@
 import sys
-import math
 import sympy
+import numpy as np
+import matplotlib
+matplotlib.use('QtAgg')
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QGridLayout, QListWidget, QListWidgetItem,
-    QLabel, QSplitter, QFrame
+    QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QGroupBox
 )
 
 # Premium Nordic Dark Theme QSS Stylesheet
 QSS_STYLESHEET = """
 QMainWindow {
     background-color: #1e222b;
+}
+
+QTabWidget::pane {
+    border: 1px solid #2e3440;
+    background: #1e222b;
+    border-radius: 12px;
+}
+
+QTabBar::tab {
+    background: #242933;
+    color: #eceff4;
+    border: 1px solid #2e3440;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Segoe UI', sans-serif;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+QTabBar::tab:selected {
+    background: #2e3440;
+    color: #88c0d0;
+    border-bottom-color: #2e3440;
+    font-weight: bold;
+}
+
+QTabBar::tab:hover {
+    background: #3b4252;
 }
 
 /* Central Widget & Layouts */
@@ -52,11 +86,11 @@ QPushButton {
     border: 1px solid #3b4252;
     border-radius: 10px;
     color: #eceff4;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
-    font-family: 'Segoe UI', 'Outfit', sans-serif;
-    min-height: 50px;
-    min-width: 50px;
+    font-family: 'Segoe UI', sans-serif;
+    min-height: 48px;
+    min-width: 48px;
 }
 
 QPushButton:hover {
@@ -72,7 +106,7 @@ QPushButton:pressed {
 QPushButton.operatorBtn {
     background-color: #3b4252;
     color: #88c0d0;
-    font-size: 20px;
+    font-size: 18px;
 }
 
 QPushButton.operatorBtn:hover {
@@ -80,7 +114,7 @@ QPushButton.operatorBtn:hover {
     color: #8fbcbb;
 }
 
-/* Accent Buttons (Equals, Clear) */
+/* Accent Buttons */
 QPushButton.accentBtn {
     background-color: #d8dee9;
     color: #2e3440;
@@ -91,29 +125,21 @@ QPushButton.accentBtn:hover {
     background-color: #e5e9f0;
 }
 
-QPushButton.accentBtn:pressed {
-    background-color: #eceff4;
-}
-
 QPushButton.equalBtn {
     background-color: #88c0d0;
     color: #2e3440;
     font-weight: bold;
-    font-size: 22px;
+    font-size: 20px;
 }
 
 QPushButton.equalBtn:hover {
     background-color: #8fbcbb;
 }
 
-QPushButton.equalBtn:pressed {
-    background-color: #a3be8c;
-}
-
 QPushButton.scientificBtn {
     background-color: #2b303c;
     color: #b48ead;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 QPushButton.scientificBtn:hover {
@@ -123,11 +149,27 @@ QPushButton.scientificBtn:hover {
 QPushButton.symbolicBtn {
     background-color: #2f384c;
     color: #a3be8c;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 QPushButton.symbolicBtn:hover {
     background-color: #3b4862;
+}
+
+/* Group Boxes & Containers */
+QGroupBox {
+    border: 1px solid #2e3440;
+    border-radius: 8px;
+    margin-top: 12px;
+    font-weight: bold;
+    color: #81a1c1;
+    font-size: 13px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 3px 0 3px;
 }
 
 /* Sidebar and History Styles */
@@ -149,7 +191,7 @@ QListWidget#historyList {
     background-color: transparent;
     border: none;
     color: #eceff4;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 QListWidget#historyList::item {
@@ -169,62 +211,69 @@ QListWidget#historyList::item:selected {
     border: 1px solid #88c0d0;
 }
 
-/* Control Panel Toggle Button */
 QPushButton#toggleSidebarBtn, QPushButton#toggleSciBtn {
     background-color: transparent;
     border: none;
     color: #81a1c1;
-    font-size: 14px;
+    font-size: 13px;
     text-decoration: underline;
     max-width: 120px;
     min-height: 25px;
-}
-
-QPushButton#toggleSidebarBtn:hover, QPushButton#toggleSciBtn:hover {
-    color: #88c0d0;
 }
 """
 
 class Karhulaattori(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Karhulaattori - Premium Calculator")
-        self.setMinimumSize(460, 640)
-        self.resize(540, 720)
+        self.setWindowTitle("Karhulaattori - Premium Math Solver")
+        self.setMinimumSize(780, 680)
+        self.resize(850, 720)
         
         # State variables
         self.expression = ""
         self.current_input = "0"
         self.new_entry_started = True
         
-        # Build UI
-        self.setup_ui()
-        self.apply_styles()
-        self.bind_shortcuts()
-        self.update_displays()
-
-    def setup_ui(self):
-        # Central widget and layout
+        # Setup Tabbed Layout
         self.central_widget = QWidget()
         self.central_widget.setObjectName("centralWidget")
         self.setCentralWidget(self.central_widget)
         
-        main_layout = QHBoxLayout(self.central_widget)
-        main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(12)
+        layout = QVBoxLayout(self.central_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
         
-        # Splitter to allow resizing the sidebar
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+        
+        # Tabs setup
+        self.setup_calculator_tab()
+        self.setup_symbolic_tab()
+        
+        self.apply_styles()
+        self.bind_shortcuts()
+        self.update_displays()
+
+    def apply_styles(self):
+        self.setStyleSheet(QSS_STYLESHEET)
+
+    def setup_calculator_tab(self):
+        calc_widget = QWidget()
+        self.tabs.addTab(calc_widget, "Calculator")
+        
+        tab_layout = QHBoxLayout(calc_widget)
+        tab_layout.setContentsMargins(8, 8, 8, 8)
+        tab_layout.setSpacing(10)
+        
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_layout.addWidget(self.splitter)
+        tab_layout.addWidget(self.splitter)
         
-        # Left Side (Calculator Display & Buttons)
-        self.calc_container = QWidget()
-        calc_layout = QVBoxLayout(self.calc_container)
-        calc_layout.setContentsMargins(0, 0, 0, 0)
-        calc_layout.setSpacing(10)
-        self.splitter.addWidget(self.calc_container)
+        # Left Panel (Layout)
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(8)
         
-        # Displays Frame
+        # Display
         display_frame = QFrame()
         display_frame.setObjectName("displayFrame")
         display_layout = QVBoxLayout(display_frame)
@@ -239,39 +288,33 @@ class Karhulaattori(QMainWindow):
         self.display_input.setObjectName("mainDisplay")
         self.display_input.setReadOnly(True)
         display_layout.addWidget(self.display_input)
+        left_layout.addWidget(display_frame)
         
-        calc_layout.addWidget(display_frame)
-        
-        # Variable x input row (Toggles visibility with Scientific Mode)
+        # Variable x input row
         self.x_input_frame = QFrame()
-        self.x_input_frame.setObjectName("xInputFrame")
         self.x_input_frame.setVisible(False)
         x_input_layout = QHBoxLayout(self.x_input_frame)
         x_input_layout.setContentsMargins(8, 2, 8, 2)
         
         x_label = QLabel("Variable x value:")
-        x_label.setStyleSheet("color: #a3be8c; font-size: 14px; font-weight: bold;")
+        x_label.setStyleSheet("color: #a3be8c; font-size: 13px; font-weight: bold;")
         x_input_layout.addWidget(x_label)
         
         self.x_value_input = QLineEdit("5")
-        self.x_value_input.setObjectName("xValueInput")
         self.x_value_input.setStyleSheet("""
-            QLineEdit#xValueInput {
-                background-color: #2e3440;
-                border: 1px solid #4c566a;
-                border-radius: 6px;
-                color: #eceff4;
-                font-size: 14px;
-                padding: 4px;
-                max-width: 100px;
-            }
+            background-color: #2e3440;
+            border: 1px solid #4c566a;
+            border-radius: 6px;
+            color: #eceff4;
+            font-size: 13px;
+            padding: 4px;
+            max-width: 80px;
         """)
         x_input_layout.addWidget(self.x_value_input)
         x_input_layout.addStretch()
+        left_layout.addWidget(self.x_input_frame)
         
-        calc_layout.addWidget(self.x_input_frame)
-        
-        # Toggles Row
+        # Options Row
         toggles_layout = QHBoxLayout()
         self.toggle_sci_btn = QPushButton("Scientific Mode")
         self.toggle_sci_btn.setObjectName("toggleSciBtn")
@@ -286,16 +329,15 @@ class Karhulaattori(QMainWindow):
         self.toggle_sidebar_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.toggle_sidebar_btn.clicked.connect(self.toggle_sidebar)
         toggles_layout.addWidget(self.toggle_sidebar_btn)
+        left_layout.addLayout(toggles_layout)
         
-        calc_layout.addLayout(toggles_layout)
-        
-        # Keyboard grid (Stack of Scientific Panel & Grid)
+        # Buttons Widget
         self.buttons_widget = QWidget()
         self.buttons_layout = QVBoxLayout(self.buttons_widget)
         self.buttons_layout.setContentsMargins(0, 0, 0, 0)
-        self.buttons_layout.setSpacing(8)
+        self.buttons_layout.setSpacing(6)
         
-        # Create Scientific/Symbolic Grid
+        # Scientific grid
         self.sci_panel = QFrame()
         self.sci_panel.setVisible(False)
         sci_grid = QGridLayout(self.sci_panel)
@@ -318,13 +360,12 @@ class Karhulaattori(QMainWindow):
             
         self.buttons_layout.addWidget(self.sci_panel)
         
-        # Create Core Grid
+        # Core Grid
         core_grid_widget = QWidget()
         core_grid = QGridLayout(core_grid_widget)
         core_grid.setContentsMargins(0, 0, 0, 0)
-        core_grid.setSpacing(8)
+        core_grid.setSpacing(6)
         
-        # Grid: row 0 to 4
         buttons = [
             ('C', 'clear', 0, 0, 1, 1, 'accentBtn'),
             ('CE', 'clear_entry', 0, 1, 1, 1, 'accentBtn'),
@@ -360,9 +401,10 @@ class Karhulaattori(QMainWindow):
             core_grid.addWidget(btn, row, col, rspan, cspan)
             
         self.buttons_layout.addWidget(core_grid_widget)
-        calc_layout.addWidget(self.buttons_widget)
+        left_layout.addWidget(self.buttons_widget)
+        self.splitter.addWidget(left_container)
         
-        # Right Side (History Sidebar)
+        # History Sidebar
         self.sidebar = QFrame()
         self.sidebar.setObjectName("sidebarFrame")
         sidebar_layout = QVBoxLayout(self.sidebar)
@@ -372,21 +414,10 @@ class Karhulaattori(QMainWindow):
         title = QLabel("History")
         title.setObjectName("sidebarTitle")
         sidebar_header.addWidget(title)
-        
         sidebar_header.addStretch()
         
         clear_hist_btn = QPushButton("Clear")
-        clear_hist_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 12px;
-                min-height: 24px;
-                min-width: 50px;
-                background-color: #3b4252;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #4c566a; }
-        """)
+        clear_hist_btn.setStyleSheet("font-size: 11px; min-height: 22px; max-width: 50px; background-color: #3b4252; border: none;")
         clear_hist_btn.clicked.connect(self.clear_history)
         sidebar_header.addWidget(clear_hist_btn)
         sidebar_layout.addLayout(sidebar_header)
@@ -398,12 +429,122 @@ class Karhulaattori(QMainWindow):
         
         self.splitter.addWidget(self.sidebar)
         self.sidebar.setVisible(False)
-        
-        # Initial splitter ratio
-        self.splitter.setSizes([450, 200])
+        self.splitter.setSizes([500, 250])
 
-    def apply_styles(self):
-        self.setStyleSheet(QSS_STYLESHEET)
+    def setup_symbolic_tab(self):
+        sym_widget = QWidget()
+        self.tabs.addTab(sym_widget, "Symbolic Solver & Grapher")
+        
+        layout = QHBoxLayout(sym_widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
+        
+        # Left Column - Function Input & Solvers
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        
+        input_group = QGroupBox("Define Function f(x)")
+        ig_layout = QVBoxLayout(input_group)
+        self.f_x_input = QLineEdit("x**2 - 3*x + 2")
+        self.f_x_input.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #3b4252;
+            border-radius: 8px;
+            color: #eceff4;
+            font-size: 16px;
+            font-family: 'Consolas', monospace;
+            padding: 8px;
+        """)
+        ig_layout.addWidget(self.f_x_input)
+        left_layout.addWidget(input_group)
+        
+        # Action Grid for solvers
+        actions_group = QGroupBox("Symbolic Operators")
+        ag_layout = QGridLayout(actions_group)
+        ag_layout.setSpacing(8)
+        
+        sym_ops = [
+            ("Solve f(x) = 0", "solve_eq"),
+            ("Derivative (d/dx)", "derive_eq"),
+            ("Integral (∫dx)", "integrate_eq"),
+            ("Simplify Formula", "simplify_eq"),
+            ("Limit x -> 0", "limit_0"),
+            ("Taylor Expansion", "taylor_eq")
+        ]
+        
+        for idx, (label, act) in enumerate(sym_ops):
+            btn = QPushButton(label)
+            btn.setStyleSheet("font-size: 13px; font-weight: bold; background-color: #2f384c; color: #a3be8c;")
+            btn.clicked.connect(lambda checked, action=act: self.execute_symbolic_op(action))
+            row = idx // 2
+            col = idx % 2
+            ag_layout.addWidget(btn, row, col)
+            
+        left_layout.addWidget(actions_group)
+        
+        # Results View
+        results_group = QGroupBox("Calculation Output")
+        rg_layout = QVBoxLayout(results_group)
+        self.sym_output = QTextBrowser()
+        self.sym_output.setStyleSheet("""
+            background-color: #242933;
+            border: 1px solid #2e3440;
+            border-radius: 8px;
+            color: #a3be8c;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+        """)
+        rg_layout.addWidget(self.sym_output)
+        left_layout.addWidget(results_group)
+        
+        layout.addWidget(left_panel, 2)
+        
+        # Right Column - Visual Plot Area
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        plot_group = QGroupBox("Interactive Graph")
+        pg_layout = QVBoxLayout(plot_group)
+        
+        # Matplotlib Canvas Setup
+        self.canvas = FigureCanvas(Figure(facecolor='#1e222b'))
+        self.ax = self.canvas.figure.subplots()
+        self.ax.set_facecolor('#242933')
+        self.ax.tick_params(colors='#eceff4')
+        self.ax.grid(color='#2e3440', linestyle='--')
+        
+        pg_layout.addWidget(self.canvas)
+        
+        # Plot Range Options & Button
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("Range x from:"))
+        self.x_min_input = QLineEdit("-10")
+        self.x_min_input.setFixedWidth(50)
+        self.x_min_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
+        control_layout.addWidget(self.x_min_input)
+        
+        control_layout.addWidget(QLabel("to:"))
+        self.x_max_input = QLineEdit("10")
+        self.x_max_input.setFixedWidth(50)
+        self.x_max_input.setStyleSheet("background-color: #2e3440; color: #eceff4; border: 1px solid #3b4252; border-radius: 4px; padding: 3px;")
+        control_layout.addWidget(self.x_max_input)
+        
+        control_layout.addStretch()
+        
+        self.plot_btn = QPushButton("Plot Function")
+        self.plot_btn.setStyleSheet("background-color: #88c0d0; color: #2e3440; font-weight: bold; min-height: 35px; min-width: 120px;")
+        self.plot_btn.clicked.connect(self.plot_function)
+        control_layout.addWidget(self.plot_btn)
+        
+        pg_layout.addLayout(control_layout)
+        right_layout.addWidget(plot_group)
+        
+        layout.addWidget(right_panel, 3)
+        
+        # Initial Plot
+        self.plot_function()
 
     def bind_shortcuts(self):
         # Digits & decimal
@@ -419,14 +560,14 @@ class Karhulaattori(QMainWindow):
             '/': ('divide', '÷'),
             '%': ('percent', '%'),
             '=': ('equals', '='),
-            '\r': ('equals', '='),  # Enter key
+            '\r': ('equals', '='),
             '\n': ('equals', '='),
         }
         for key, (action, val) in ops.items():
             sc = QShortcut(QKeySequence(key), self)
             sc.activated.connect(lambda a=action, v=val: self.handle_action(a, v))
             
-        # Clear/Delete
+        # Clear
         sc_clear = QShortcut(QKeySequence("Esc"), self)
         sc_clear.activated.connect(lambda: self.handle_action("clear", "C"))
         
@@ -457,7 +598,7 @@ class Karhulaattori(QMainWindow):
             self.new_entry_started = False
         else:
             if char == '.' and '.' in self.current_input:
-                return  # Skip multiple dots
+                return
             if self.current_input == "0" and char != '.':
                 self.current_input = char
             else:
@@ -496,18 +637,14 @@ class Karhulaattori(QMainWindow):
                     
         elif action in ["add", "subtract", "multiply", "divide"]:
             op_map = {"add": "+", "subtract": "-", "multiply": "*", "divide": "/"}
-            # Adjust spacing or insert operator
             if self.new_entry_started and self.expression and self.expression[-1] in ["+", "-", "*", "/"]:
                 self.expression = self.expression[:-1] + op_map[action]
             else:
-                # Add implicit multiply if entering digit/var next to operator
                 self.expression += f" {self.current_input} {op_map[action]}"
-            
             self.new_entry_started = True
             
         elif action == "percent":
             try:
-                # Use SymPy to safely calculate percentage
                 expr_str = f"({self.current_input}) / 100"
                 result = sympy.sympify(expr_str)
                 self.current_input = self.format_number(result)
@@ -520,16 +657,11 @@ class Karhulaattori(QMainWindow):
             
             full_expr = f"{self.expression} {self.current_input}".strip()
             try:
-                # Standardize arithmetic notation
                 eval_expr = full_expr.replace("×", "*").replace("÷", "/")
-                
-                # Parse expression using sympy
                 x = sympy.Symbol('x')
                 sym_expr = sympy.sympify(eval_expr)
                 
-                # Check if x is present in the equation
                 if x in sym_expr.free_symbols:
-                    # Substitute the value of x
                     x_val_str = self.x_value_input.text().strip()
                     x_val = sympy.sympify(x_val_str)
                     result_val = sym_expr.subs(x, x_val).evalf()
@@ -537,19 +669,17 @@ class Karhulaattori(QMainWindow):
                     result_val = sym_expr.evalf()
                 
                 formatted_res = self.format_number(result_val)
-                
-                # Add to history
                 readable_expr = full_expr.replace("*", "×").replace("/", "÷").strip()
                 self.add_history_item(readable_expr, formatted_res)
                 
                 self.current_input = formatted_res
                 self.expression = ""
                 self.new_entry_started = True
-            except Exception as e:
+            except Exception:
                 self.current_input = "Error"
                 self.new_entry_started = True
                 
-        # Scientific/Symbolic Operations
+        # Scientific Operations
         elif action == "pow2":
             self.current_input = f"({self.current_input})**2"
             self.new_entry_started = False
@@ -587,8 +717,8 @@ class Karhulaattori(QMainWindow):
             self.new_entry_started = True
             self.current_input = "0"
             
-        # Pure Symbolic Features
         elif action in ["diff", "integrate", "simplify", "solve"]:
+            # Quick route symbolic operations from the main calculator
             full_expr = f"{self.expression} {self.current_input}".strip()
             try:
                 eval_expr = full_expr.replace("×", "*").replace("÷", "/")
@@ -613,7 +743,7 @@ class Karhulaattori(QMainWindow):
                 self.current_input = formatted_res
                 self.expression = ""
                 self.new_entry_started = True
-            except Exception as e:
+            except Exception:
                 self.current_input = "Error"
                 self.new_entry_started = True
                 
@@ -621,7 +751,6 @@ class Karhulaattori(QMainWindow):
 
     def format_number(self, value):
         try:
-            # If it's a sympy number/float, format it
             if isinstance(value, (sympy.Float, sympy.Integer)):
                 val_float = float(value)
                 if val_float.is_integer():
@@ -649,11 +778,103 @@ class Karhulaattori(QMainWindow):
     def clear_history(self):
         self.history_list.clear()
 
+    # Dedicated Symbolic Solver operations
+    def execute_symbolic_op(self, action):
+        func_str = self.f_x_input.text().strip()
+        if not func_str:
+            self.sym_output.setText("Error: Function f(x) is empty.")
+            return
+            
+        try:
+            x = sympy.Symbol('x')
+            expr = sympy.sympify(func_str)
+            output_html = f"<b>Function:</b> f(x) = {expr}<br><br>"
+            
+            if action == "solve_eq":
+                roots = sympy.solve(expr, x)
+                output_html += "<b>Solutions for f(x) = 0:</b><br>"
+                if not roots:
+                    output_html += "No analytical roots found."
+                else:
+                    for i, root in enumerate(roots):
+                        output_html += f"x<sub>{i+1}</sub> = {root}<br>"
+                        
+            elif action == "derive_eq":
+                deriv = sympy.diff(expr, x)
+                output_html += f"<b>Derivative f'(x):</b><br>{deriv}"
+                
+            elif action == "integrate_eq":
+                integral = sympy.integrate(expr, x)
+                output_html += f"<b>Indefinite Integral ∫f(x)dx:</b><br>{integral} + C"
+                
+            elif action == "simplify_eq":
+                simp = sympy.simplify(expr)
+                output_html += f"<b>Simplified Formula:</b><br>{simp}"
+                
+            elif action == "limit_0":
+                lim = sympy.limit(expr, x, 0)
+                output_html += f"<b>Limit as x → 0:</b><br>{lim}"
+                
+            elif action == "taylor_eq":
+                series = sympy.series(expr, x, 0, 5)
+                output_html += f"<b>Taylor Series (x=0, up to O(x^5)):</b><br>{series}"
+                
+            self.sym_output.setHtml(output_html)
+        except Exception as e:
+            self.sym_output.setText(f"Error executing operation:\n{str(e)}")
+
+    def plot_function(self):
+        func_str = self.f_x_input.text().strip()
+        try:
+            x = sympy.Symbol('x')
+            expr = sympy.sympify(func_str)
+            
+            # Make numeric function via numpy
+            f_num = sympy.lambdify(x, expr, "numpy")
+            
+            x_min = float(self.x_min_input.text())
+            x_max = float(self.x_max_input.text())
+            
+            # Draw values
+            x_vals = np.linspace(x_min, x_max, 400)
+            
+            # Wrap function execution to avoid crash on division-by-zero or complex numbers
+            y_vals = []
+            for val in x_vals:
+                try:
+                    res = f_num(val)
+                    if isinstance(res, complex) or np.isnan(res) or np.isinf(res):
+                        y_vals.append(None)
+                    else:
+                        y_vals.append(float(res))
+                except Exception:
+                    y_vals.append(None)
+                    
+            y_vals = np.array(y_vals, dtype=float)
+            
+            # Redraw canvas
+            self.ax.clear()
+            self.ax.set_facecolor('#242933')
+            self.ax.grid(color='#2e3440', linestyle='--')
+            
+            # Plot the line
+            self.ax.plot(x_vals, y_vals, color='#88c0d0', linewidth=2.5, label=f"y = {expr}")
+            
+            # Draw horizontal/vertical zero lines
+            self.ax.axhline(0, color='#3b4252', linewidth=1.2)
+            self.ax.axvline(0, color='#3b4252', linewidth=1.2)
+            
+            self.ax.legend(facecolor='#1e222b', edgecolor='#2e3440', labelcolor='#eceff4')
+            self.ax.tick_params(colors='#eceff4')
+            
+            self.canvas.draw()
+        except Exception as e:
+            self.sym_output.setText(f"Plotting Error:\n{str(e)}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
-    # Premium theme font selection
     font = QFont("Segoe UI", 11)
     app.setFont(font)
     
