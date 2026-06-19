@@ -107,7 +107,7 @@ QPushButton {
 
 QPushButton:hover {
     background-color: #3b4252;
-    border: 1px solid #4c566a;
+    border: 1px solid #7b88a8;
 }
 
 QPushButton:pressed {
@@ -166,6 +166,12 @@ QPushButton.symbolicBtn {
 
 QPushButton.symbolicBtn:hover {
     background-color: #3b4862;
+}
+
+/* Labels */
+QLabel {
+    color: #d8dee9;
+    font-size: 12px;
 }
 
 /* Group Boxes & Containers */
@@ -287,7 +293,7 @@ class Karhulaattori(QMainWindow):
 
     @staticmethod
     def _err_html(e):
-        return self._err_html(e)
+        return f"<b style='color:#bf616a'>Error:</b> {e}"
 
     def __init__(self):
         super().__init__()
@@ -426,7 +432,7 @@ class Karhulaattori(QMainWindow):
         self.x_value_input = QLineEdit("5")
         self.x_value_input.setStyleSheet("""
             background-color: #2e3440;
-            border: 1px solid #4c566a;
+            border: 1px solid #7b88a8;
             border-radius: 6px;
             color: #eceff4;
             font-size: 13px;
@@ -814,7 +820,7 @@ class Karhulaattori(QMainWindow):
         g = QGridLayout(grp)
         g.setSpacing(6)
         hint = QLabel("Sides a, b, c  opposite to angles A, B, C (degrees).")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint.setWordWrap(True)
         g.addWidget(hint, 0, 0, 1, 4)
 
@@ -944,7 +950,7 @@ class Karhulaattori(QMainWindow):
                             textcoords='offset points',xytext=(4,4))
             ax.set_title("Triangle", color='#eceff4', fontsize=9)
             self._geo_tri_fig.tight_layout(pad=0.6)
-            self._geo_tri_canvas.draw()
+            self._geo_tri_canvas.draw_idle()
 
             self._geo_tri_out.setHtml(
                 f"<b>Sides:</b>  a = {a:.6g},  b = {b:.6g},  c = {c:.6g}<br>"
@@ -999,7 +1005,7 @@ class Karhulaattori(QMainWindow):
             g.addWidget(w, row, 1)
 
         self._conic_hint = QLabel("")
-        self._conic_hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        self._conic_hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         self._conic_hint.setWordWrap(True)
         g.addWidget(self._conic_hint, 5, 0, 1, 2)
 
@@ -1039,8 +1045,8 @@ class Karhulaattori(QMainWindow):
             self._geo_con_fig.clear()
             ax = self._geo_con_fig.add_subplot(111)
             self._style_axes(ax, equal=True)
-            ax.axhline(0, color='#4c566a', linewidth=0.6)
-            ax.axvline(0, color='#4c566a', linewidth=0.6)
+            ax.axhline(0, color='#7b88a8', linewidth=0.6)
+            ax.axvline(0, color='#7b88a8', linewidth=0.6)
 
             info_lines = []
 
@@ -1107,8 +1113,8 @@ class Karhulaattori(QMainWindow):
                 ax.plot([h-c_val, h+c_val], [k, k], 'o', color='#bf616a', markersize=6)
                 # Asymptotes
                 xl = np.array([h-4*a, h+4*a])
-                ax.plot(xl, k + (b/a)*(xl-h), color='#4c566a', linestyle=':', linewidth=1)
-                ax.plot(xl, k - (b/a)*(xl-h), color='#4c566a', linestyle=':', linewidth=1)
+                ax.plot(xl, k + (b/a)*(xl-h), color='#7b88a8', linestyle=':', linewidth=1)
+                ax.plot(xl, k - (b/a)*(xl-h), color='#7b88a8', linestyle=':', linewidth=1)
                 info_lines = [
                     f"Hyperbola: (x−{h})²/{a}² − (y−{k})²/{b}² = 1",
                     f"c = √(a²+b²) = {c_val:.6g}",
@@ -1119,7 +1125,7 @@ class Karhulaattori(QMainWindow):
 
             ax.set_title(f"{t}  (h={h}, k={k}, a={a}, b={b})", color='#eceff4', fontsize=9)
             self._geo_con_fig.tight_layout(pad=0.6)
-            self._geo_con_canvas.draw()
+            self._geo_con_canvas.draw_idle()
             self._geo_con_out.setHtml("<br>".join(f"<b>{l.split(':')[0]}:</b>{':'.join(l.split(':')[1:])}" if ':' in l else l for l in info_lines))
             self._add_to_global_history("Geometry·Conics", t, f"h={h},k={k},a={a},b={b}", info_lines[0])
 
@@ -1285,7 +1291,7 @@ class Karhulaattori(QMainWindow):
 
             ax.set_title(t, color='#eceff4', fontsize=9)
             self._geo_shp_fig.tight_layout(pad=0.6)
-            self._geo_shp_canvas.draw()
+            self._geo_shp_canvas.draw_idle()
 
             html = "".join(f"<b>{k}:</b> {v:.6g}<br>" if isinstance(v, float) else f"<b>{k}:</b> {v}<br>"
                            for k, v in info.items())
@@ -1452,8 +1458,8 @@ class Karhulaattori(QMainWindow):
             self._geo_xf_fig.clear()
             ax = self._geo_xf_fig.add_subplot(111)
             self._style_axes(ax, equal=True)
-            ax.axhline(0, color='#4c566a', linewidth=0.5)
-            ax.axvline(0, color='#4c566a', linewidth=0.5)
+            ax.axhline(0, color='#7b88a8', linewidth=0.5)
+            ax.axvline(0, color='#7b88a8', linewidth=0.5)
 
             orig_c = close(pts)
             new_c  = close(new_pts)
@@ -1470,7 +1476,7 @@ class Karhulaattori(QMainWindow):
             ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
             ax.set_title(desc, color='#eceff4', fontsize=9)
             self._geo_xf_fig.tight_layout(pad=0.6)
-            self._geo_xf_canvas.draw()
+            self._geo_xf_canvas.draw_idle()
 
             self._geo_xf_out.setHtml(
                 f"<b>{desc}</b><br>"
@@ -2166,11 +2172,11 @@ class Karhulaattori(QMainWindow):
         self.ax.set_facecolor('#242933')
         self.ax.tick_params(colors='#eceff4')
         for sp in self.ax.spines.values():
-            sp.set_edgecolor('#4c566a')
+            sp.set_edgecolor('#7b88a8')
         self.ax.grid(color='#2e3440', linestyle='--', alpha=0.6)
-        self.ax.axhline(0, color='#4c566a', linewidth=1.0)
-        self.ax.axvline(0, color='#4c566a', linewidth=1.0)
-        self.canvas.draw()
+        self.ax.axhline(0, color='#7b88a8', linewidth=1.0)
+        self.ax.axvline(0, color='#7b88a8', linewidth=1.0)
+        self.canvas.draw_idle()
         self.intercepts_output.setHtml('')
 
     def _setup_graph_interaction(self):
@@ -2294,10 +2300,10 @@ class Karhulaattori(QMainWindow):
         self.ax.set_facecolor('#242933')
         self.ax.tick_params(colors='#eceff4')
         for sp in self.ax.spines.values():
-            sp.set_edgecolor('#4c566a')
+            sp.set_edgecolor('#7b88a8')
         self.ax.grid(color='#2e3440', linestyle='--', alpha=0.6)
-        self.ax.axhline(0, color='#4c566a', linewidth=1.0)
-        self.ax.axvline(0, color='#4c566a', linewidth=1.0)
+        self.ax.axhline(0, color='#7b88a8', linewidth=1.0)
+        self.ax.axvline(0, color='#7b88a8', linewidth=1.0)
 
         explicit_list = []   # (label, expr, color, y_arr)
         implicit_list = []   # (label, expr, color)
@@ -2511,7 +2517,7 @@ class Karhulaattori(QMainWindow):
 
                 for px, py in pts:
                     self.ax.plot(px, py, 'D', color='#ffffff', markersize=9, zorder=7,
-                                 markeredgecolor='#4c566a', markeredgewidth=1)
+                                 markeredgecolor='#7b88a8', markeredgewidth=1)
                     self.ax.annotate(f'({px:.4g}, {py:.4g})', (px, py),
                                      textcoords='offset points', xytext=(5, 8),
                                      color='#eceff4', fontsize=8,
@@ -2545,7 +2551,7 @@ class Karhulaattori(QMainWindow):
                     pass
                 for px, py in pts:
                     self.ax.plot(px, py, 'D', color='#ffffff', markersize=9, zorder=7,
-                                 markeredgecolor='#4c566a', markeredgewidth=1)
+                                 markeredgecolor='#7b88a8', markeredgewidth=1)
                     self.ax.annotate(f'({px:.4g}, {py:.4g})', (px, py),
                                      textcoords='offset points', xytext=(5, 8),
                                      color='#eceff4', fontsize=8,
@@ -2559,11 +2565,11 @@ class Karhulaattori(QMainWindow):
         self.ax.set_xlim(x_min, x_max)
         self.ax.set_ylim(y_min, y_max)
         self.ax.legend(facecolor='#1e222b', edgecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
-        self.canvas.draw()
+        self.canvas.draw_idle()
 
         self.intercepts_output.setHtml(
             '<br>'.join(intercept_parts) if intercept_parts
-            else '<i style="color:#4c566a">No intercepts found in current view.</i>'
+            else '<i style="color:#7b88a8">No intercepts found in current view.</i>'
         )
 
 
@@ -2704,12 +2710,12 @@ class Karhulaattori(QMainWindow):
     def _init_argand_axes(self):
         ax = self.cx_ax
         self._style_axes(ax, equal=True)
-        ax.axhline(0, color='#4c566a', linewidth=1.2)
-        ax.axvline(0, color='#4c566a', linewidth=1.2)
+        ax.axhline(0, color='#7b88a8', linewidth=1.2)
+        ax.axvline(0, color='#7b88a8', linewidth=1.2)
         ax.set_xlabel('Re', color='#81a1c1')
         ax.set_ylabel('Im', color='#81a1c1')
         ax.set_title('Argand Plane', color='#eceff4')
-        self.cx_canvas.draw()
+        self.cx_canvas.draw_idle()
 
     def _polar_to_z1(self):
         try:
@@ -2740,7 +2746,7 @@ class Karhulaattori(QMainWindow):
 
             _draw_point(ax, z1, 'z₁', '#88c0d0')
             _draw_point(ax, z2, 'z₂', '#a3be8c')
-            self.cx_canvas.draw()
+            self.cx_canvas.draw_idle()
         except Exception as e:
             self.cx_output.setHtml(f"<b style='color:#bf616a'>Plot Error:</b> {e}")
 
@@ -3127,7 +3133,7 @@ class Karhulaattori(QMainWindow):
         g = QGridLayout(grp)
         g.setSpacing(6)
         hint = QLabel("Use y' and y'' for derivatives.\nExamples:  y'' + y = 0    y' = y    y'' - 3*y' + 2*y = exp(x)")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint.setWordWrap(True)
         g.addWidget(hint, 0, 0, 1, 2)
         g.addWidget(QLabel("ODE:"), 1, 0)
@@ -3136,7 +3142,7 @@ class Karhulaattori(QMainWindow):
         g.addWidget(self._de_sym_ode, 1, 1)
 
         ic_hint = QLabel("Initial conditions  (optional, comma-separated):\nExamples:  y(0)=1   y(0)=1, y'(0)=0")
-        ic_hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        ic_hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         ic_hint.setWordWrap(True)
         g.addWidget(ic_hint, 2, 0, 1, 2)
         g.addWidget(QLabel("ICs:"), 3, 0)
@@ -3247,10 +3253,10 @@ class Karhulaattori(QMainWindow):
             ax = self._de_sym_fig.add_subplot(111)
             self._style_axes(ax)
             ax.plot(xs, ys, color='#88c0d0', linewidth=2)
-            ax.axhline(0, color='#4c566a', linewidth=0.6)
+            ax.axhline(0, color='#7b88a8', linewidth=0.6)
             ax.set_title("Solution  y(x)", color='#eceff4', fontsize=9)
             self._de_sym_fig.tight_layout(pad=0.6)
-            self._de_sym_canvas.draw()
+            self._de_sym_canvas.draw_idle()
         except Exception:
             pass
 
@@ -3275,7 +3281,7 @@ class Karhulaattori(QMainWindow):
             "System (comma-sep):  -y[1], y[0]   (SHO: dx/dt=v, dv/dt=-x)\n"
             "Use t and y (scalar) or y[0], y[1], … (vector)"
         )
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint.setWordWrap(True)
         g.addWidget(hint, 0, 0, 1, 2)
 
@@ -3449,7 +3455,7 @@ class Karhulaattori(QMainWindow):
                 ax.set_xlabel("t", color='#81a1c1', fontsize=7)
 
             self._de_num_fig.tight_layout(pad=0.6)
-            self._de_num_canvas.draw()
+            self._de_num_canvas.draw_idle()
 
             first_name, (ts, ys) = list(results.items())[0]
             y_end = ys[-1] if ys.ndim == 1 else ys[-1]
@@ -3480,7 +3486,7 @@ class Karhulaattori(QMainWindow):
         g = QGridLayout(grp)
         g.setSpacing(6)
         hint = QLabel("dx/dt = f(x,y)    dy/dt = g(x,y)\nUse x and y as variables.")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         g.addWidget(hint, 0, 0, 1, 2)
 
         g.addWidget(QLabel("f(x,y) ="), 1, 0)
@@ -3654,7 +3660,7 @@ class Karhulaattori(QMainWindow):
 
             ax.set_title(f"Phase portrait", color='#eceff4', fontsize=9)
             self._de_ph_fig.tight_layout(pad=0.4)
-            self._de_ph_canvas.draw()
+            self._de_ph_canvas.draw_idle()
             self._add_to_global_history("DE·Phase", mode, f"{f_str}, {g_str}", "")
         except Exception as e:
             self._de_ph_out.setHtml(self._err_html(e))
@@ -3876,7 +3882,7 @@ class Karhulaattori(QMainWindow):
                 self._de_pde_out.setHtml("<b>Boundary:</b> u=sin(πx/L) on top, 0 elsewhere")
 
             self._de_pde_fig.tight_layout(pad=0.5)
-            self._de_pde_canvas.draw()
+            self._de_pde_canvas.draw_idle()
             self._add_to_global_history("DE·PDE", ptype.split()[0], ic_str, "solved")
 
         except Exception as e:
@@ -3991,7 +3997,7 @@ class Karhulaattori(QMainWindow):
         distg.addLayout(params_row)
 
         hint = QLabel("Normal: p1=μ p2=σ  |  Binomial: p1=n p2=p  |  Poisson/Exp: p1=λ  |  t/χ²: p1=df")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint.setWordWrap(True)
         distg.addWidget(hint)
 
@@ -4037,7 +4043,7 @@ class Karhulaattori(QMainWindow):
         ax = self.stat_ax
         self._style_axes(ax)
         self.stat_fig.tight_layout(pad=1.2)
-        self.stat_canvas.draw()
+        self.stat_canvas.draw_idle()
 
     def _get_stat_data(self):
         raw = self.stat_data_input.toPlainText().strip()
@@ -4093,7 +4099,7 @@ class Karhulaattori(QMainWindow):
                 if action == "histogram":
                     self.stat_ax.hist(data, bins='auto', color='#88c0d0', edgecolor='#1e222b', alpha=0.85)
                     self.stat_ax.set_title("Histogram", color='#eceff4')
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
                     self.stat_output.setHtml(f"<b>n</b> = {n}")
                     return
 
@@ -4107,7 +4113,7 @@ class Karhulaattori(QMainWindow):
                         flierprops=dict(markerfacecolor='#bf616a', marker='o', markersize=6),
                     )
                     self.stat_ax.set_title("Box Plot", color='#eceff4')
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
                     self.stat_output.setHtml(
                         f"<b>Min</b> = {mn:.6g} &nbsp; <b>Q1</b> = {q1:.6g} &nbsp; "
                         f"<b>Median</b> = {median:.6g} &nbsp; <b>Q3</b> = {q3:.6g} &nbsp; "
@@ -4121,7 +4127,7 @@ class Karhulaattori(QMainWindow):
                     self.stat_ax.axvline(median, color='#ebcb8b', linestyle=':', linewidth=1.5, label=f'Median={median:.4g}')
                     self.stat_ax.set_title("Data Distribution", color='#eceff4')
                     self.stat_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
                     self.stat_output.setHtml(
                         f"<b>n</b> = {n}<br>"
                         f"<b>Mean</b> = {mean:.6g} &nbsp;&nbsp; <b>Median</b> = {median:.6g} &nbsp;&nbsp; <b>Mode</b> = {mode_val:.6g}<br>"
@@ -4181,7 +4187,7 @@ class Karhulaattori(QMainWindow):
                         f"<b>{dist_name}</b><br>"
                         f"Mean = {dist.mean():.6g} &nbsp;&nbsp; Std = {dist.std():.6g} &nbsp;&nbsp; Var = {dist.var():.6g}"
                     )
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
 
                 elif action == "dist_cdf":
                     lo, hi = dist.ppf(0.001), dist.ppf(0.999)
@@ -4193,7 +4199,7 @@ class Karhulaattori(QMainWindow):
                     self.stat_ax.set_ylim(0, 1.05)
                     self.stat_ax.set_title(f"CDF — {dist_name}", color='#eceff4')
                     self.stat_output.setHtml(f"<b>CDF — {dist_name}</b>")
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
 
                 elif action == "dist_prob":
                     x_val = float(self.stat_x.text())
@@ -4217,7 +4223,7 @@ class Karhulaattori(QMainWindow):
                         f"<b>P(X ≤ {x_val})</b> = {prob:.6g}<br>"
                         f"<b>P(X > {x_val})</b> = {1 - prob:.6g}"
                     )
-                    self.stat_canvas.draw()
+                    self.stat_canvas.draw_idle()
 
                 elif action == "dist_inv":
                     p_val = float(self.stat_x.text())
@@ -4269,7 +4275,7 @@ class Karhulaattori(QMainWindow):
             "Explicit:  sin(sqrt(x**2+y**2))  or  z=x**2-y**2\n"
             "Implicit:  x**2+y**2+z**2=4   or   x^2+y^2=z^2  (^ works too)"
         )
-        hint_s.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint_s.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint_s.setWordWrap(True)
         sg.addWidget(hint_s)
         self.g3d_expr_input = QTextEdit("sin(sqrt(x**2 + y**2))")
@@ -4339,7 +4345,7 @@ class Karhulaattori(QMainWindow):
         pg = QGridLayout(param_grp)
         pg.setSpacing(6)
         hint_p = QLabel("e.g. helix: x=cos(t) y=sin(t) z=t/(2*pi)  t: 0 → 4*pi")
-        hint_p.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint_p.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint_p.setWordWrap(True)
         pg.addWidget(hint_p, 0, 0, 1, 2)
         for row, (lbl, attr, default) in enumerate([
@@ -4423,7 +4429,7 @@ class Karhulaattori(QMainWindow):
         ax.set_zlabel('z', color='#81a1c1', labelpad=4)
         ax.grid(True, color='#2e3440', linewidth=0.5)
         self.g3d_fig.tight_layout(pad=0.5)
-        self.g3d_canvas.draw()
+        self.g3d_canvas.draw_idle()
 
     def _clear_3d(self):
         self.g3d_ax.clear()
@@ -4432,7 +4438,7 @@ class Karhulaattori(QMainWindow):
 
     def _reset_3d_view(self):
         self.g3d_ax.view_init(elev=25, azim=-60)
-        self.g3d_canvas.draw()
+        self.g3d_canvas.draw_idle()
 
     def _parse_3d_entry(self, entry):
         """Return ('explicit', expr) or ('implicit', expr) where expr is the sympy expression.
@@ -4485,7 +4491,7 @@ class Karhulaattori(QMainWindow):
                     coords.append(v.astype(float))
                 self.g3d_ax.plot(*coords, color='#88c0d0', linewidth=2)
                 self.g3d_ax.set_title("Parametric Curve", color='#eceff4', pad=4)
-                self.g3d_canvas.draw()
+                self.g3d_canvas.draw_idle()
                 self.g3d_output.setHtml("<b>Parametric curve plotted</b>")
                 return
 
@@ -4580,7 +4586,7 @@ class Karhulaattori(QMainWindow):
                 ", ".join(entries[:2]) + ("…" if len(entries) > 2 else ""),
                 color='#eceff4', fontsize=9, pad=4
             )
-            self.g3d_canvas.draw()
+            self.g3d_canvas.draw_idle()
             self.g3d_output.setHtml(
                 f"<b>Plotted {plotted} surface(s)</b>  —  drag to rotate, scroll to zoom"
             )
@@ -4716,7 +4722,7 @@ class Karhulaattori(QMainWindow):
         ax = self.nt_ax
         self._style_axes(ax)
         self.nt_fig.tight_layout(pad=0.8)
-        self.nt_canvas.draw()
+        self.nt_canvas.draw_idle()
 
     def execute_nt_op(self, action):
 
@@ -4854,7 +4860,7 @@ class Karhulaattori(QMainWindow):
                 self._init_nt_axes()
                 self.nt_ax.plot(seq, color='#88c0d0', linewidth=1.2)
                 self.nt_ax.set_title(f"Collatz: n={n:,}  ({steps} steps)", color='#eceff4', fontsize=9)
-                self.nt_canvas.draw()
+                self.nt_canvas.draw_idle()
 
             # ── Two-number ops ────────────────────────────────────────────
             elif action == "gcd":
@@ -4934,7 +4940,7 @@ class Karhulaattori(QMainWindow):
                 self.nt_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=8)
                 self.nt_ax.set_title(f"Prime counting π(x),  x ≤ {limit:,}",
                                      color='#eceff4', fontsize=9)
-                self.nt_canvas.draw()
+                self.nt_canvas.draw_idle()
 
                 if action == "primes_upto":
                     preview = ", ".join(f"{p:,}" for p in primes[:80])
@@ -5006,7 +5012,7 @@ class Karhulaattori(QMainWindow):
         fftg = QVBoxLayout(fft)
         fftg.setSpacing(6)
         hint = QLabel("Signal samples (comma / space separated):")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         fftg.addWidget(hint)
         self.fft_data = QTextEdit("0,1,2,3,4,3,2,1,0,-1,-2,-3,-4,-3,-2,-1")
         self.fft_data.setFixedHeight(52)
@@ -5081,7 +5087,7 @@ class Karhulaattori(QMainWindow):
 
                     ax.plot(xs, safe_f(xs), color='#eceff4', linewidth=1.5, label='f(x)', alpha=0.7)
                     ax.plot(xs, S, color='#88c0d0', linewidth=2, label=f'S_{N}(x)')
-                    ax.axhline(0, color='#4c566a', linewidth=0.5)
+                    ax.axhline(0, color='#7b88a8', linewidth=0.5)
                     ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
                     ax.set_title(f"Fourier series  N={N},  L={L:.4g}", color='#eceff4', fontsize=9)
                     self.fourier_output.setHtml(
@@ -5137,7 +5143,7 @@ class Karhulaattori(QMainWindow):
                     f"Dominant frequency: <b>{dom_freq:.4g} Hz</b>  (|X| = {power[dom_idx]:.4g})"
                 )
 
-            self.fourier_canvas.draw()
+            self.fourier_canvas.draw_idle()
             self._add_to_global_history("Analysis·Fourier", action,
                                         self.fs_expr.text(), self.fourier_output.toPlainText()[:150])
         except Exception as e:
@@ -5211,7 +5217,7 @@ class Karhulaattori(QMainWindow):
         ax = self.sf_ax
         self._style_axes(ax)
         self.sf_fig.tight_layout(pad=0.8)
-        self.sf_canvas.draw()
+        self.sf_canvas.draw_idle()
 
     def _run_sf(self, action):
 
@@ -5284,11 +5290,11 @@ class Karhulaattori(QMainWindow):
                 self._init_sf_axes()
                 n_label = f"(n={n_val:.4g})" if "Bessel" in name or "Beta" in name else ""
                 self.sf_ax.plot(xs, ys, color='#88c0d0', linewidth=2)
-                self.sf_ax.axhline(0, color='#4c566a', linewidth=0.8)
-                self.sf_ax.axvline(0, color='#4c566a', linewidth=0.8)
+                self.sf_ax.axhline(0, color='#7b88a8', linewidth=0.8)
+                self.sf_ax.axvline(0, color='#7b88a8', linewidth=0.8)
                 self.sf_ax.set_title(f"{name} {n_label}", color='#eceff4', fontsize=9)
                 self.sf_ax.set_xlabel("x", color='#81a1c1', fontsize=8)
-                self.sf_canvas.draw()
+                self.sf_canvas.draw_idle()
                 self.sf_result_latex.render(latex_name + r"\text{ on } [" +
                                             f"{x_min:.4g}" + r",\," + f"{x_max:.4g}" + r"]")
 
@@ -5312,7 +5318,7 @@ class Karhulaattori(QMainWindow):
         fg = QGridLayout(fn_grp)
         fg.setSpacing(6)
         hint = QLabel("Use z as variable.  Examples:  z**2   exp(z)   1/z   (z-1)/(z+1)   sin(z)")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint.setWordWrap(True)
         fg.addWidget(hint, 0, 0, 1, 2)
         fg.addWidget(QLabel("f(z) ="), 1, 0)
@@ -5471,7 +5477,7 @@ class Karhulaattori(QMainWindow):
                 ax.set_title(f"|f(z)|  for  f(z) = {self.cm_expr.text()}", color='#eceff4', fontsize=9)
 
             self.cm_fig.tight_layout(pad=0.5)
-            self.cm_canvas.draw()
+            self.cm_canvas.draw_idle()
             self.cm_output.setHtml(f"<b>f(z) = {self.cm_expr.text()}</b>  —  {viz}")
             self._add_to_global_history("Analysis·Complex", viz, f"f(z)={self.cm_expr.text()}", viz)
 
@@ -5545,7 +5551,7 @@ class Karhulaattori(QMainWindow):
         ax = self.fa_ax
         self._style_axes(ax)
         self.fa_fig.tight_layout(pad=0.8)
-        self.fa_canvas.draw()
+        self.fa_canvas.draw_idle()
 
     def _run_fa(self, action):
 
@@ -5574,10 +5580,10 @@ class Karhulaattori(QMainWindow):
                 self._init_fa_axes()
                 self.fa_ax.plot(xs, f_vals, color='#88c0d0', linewidth=2, label='f(x)')
                 self.fa_ax.plot(xs, g_vals, color='#a3be8c', linewidth=2, label='g(x)', linestyle='--')
-                self.fa_ax.axhline(0, color='#4c566a', linewidth=0.6)
+                self.fa_ax.axhline(0, color='#7b88a8', linewidth=0.6)
                 self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
                 self.fa_ax.set_title(f"[{a:.4g}, {b:.4g}]", color='#eceff4', fontsize=9)
-                self.fa_canvas.draw()
+                self.fa_canvas.draw_idle()
 
             if action == "lp_norm":
                 integrand = lambda x: abs(safe(f_num, np.array([x]))[0]) ** p
@@ -5597,7 +5603,7 @@ class Karhulaattori(QMainWindow):
                 self.fa_ax.axhline(val, color='#bf616a', linestyle=':', linewidth=1.2, label=f'‖f‖∞={val:.4g}')
                 self.fa_ax.axhline(-val, color='#bf616a', linestyle=':', linewidth=1.2)
                 self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
-                self.fa_canvas.draw()
+                self.fa_canvas.draw_idle()
                 self._add_to_global_history("Analysis·FA", "sup norm", self.fa_f.text(), f"{val:.6g}")
 
             elif action == "inner":
@@ -5610,7 +5616,7 @@ class Karhulaattori(QMainWindow):
                 prod_vals = f_vals * g_vals
                 self.fa_ax.fill_between(xs, prod_vals, alpha=0.25, color='#ebcb8b', label='f·g')
                 self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
-                self.fa_canvas.draw()
+                self.fa_canvas.draw_idle()
                 self._add_to_global_history("Analysis·FA", "inner product",
                                             f"{self.fa_f.text()}, {self.fa_g.text()}", f"{val:.6g}")
 
@@ -5626,7 +5632,7 @@ class Karhulaattori(QMainWindow):
                 ax2.fill_between(xs, diff_vals, alpha=0.3, color='#bf616a', label='f−g')
                 ax2.tick_params(colors='#bf616a', labelsize=7)
                 ax2.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9, loc='upper right')
-                self.fa_canvas.draw()
+                self.fa_canvas.draw_idle()
                 self._add_to_global_history("Analysis·FA", "L2 distance",
                                             f"{self.fa_f.text()}, {self.fa_g.text()}", f"{val:.6g}")
 
@@ -5641,7 +5647,7 @@ class Karhulaattori(QMainWindow):
                 self.fa_ax.plot(t_conv, conv, color='#ebcb8b', linewidth=2, label='(f★g)(t)')
                 self.fa_ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
                 self.fa_ax.set_title("Convolution  (f★g)(t)", color='#eceff4', fontsize=9)
-                self.fa_canvas.draw()
+                self.fa_canvas.draw_idle()
                 self.fa_result_latex.render(r"(f \star g)(t) = \int f(\tau)\,g(t-\tau)\,d\tau")
                 self._add_to_global_history("Analysis·FA", "convolution",
                                             f"{self.fa_f.text()}, {self.fa_g.text()}", "plotted")
@@ -5863,7 +5869,7 @@ class Karhulaattori(QMainWindow):
             ax = self.nm_rf_fig.add_subplot(111)
             self._style_axes(ax)
             ax.plot(xs, ys, color='#88c0d0', linewidth=2, label='f(x)')
-            ax.axhline(0, color='#4c566a', linewidth=0.8)
+            ax.axhline(0, color='#7b88a8', linewidth=0.8)
             if root is not None:
                 ax.axvline(root, color='#bf616a', linestyle='--', linewidth=1.2)
                 ax.plot(root, f_num(root), 'o', color='#ebcb8b', markersize=8,
@@ -5874,7 +5880,7 @@ class Karhulaattori(QMainWindow):
             ax.set_title(f"{method.capitalize()}  —  f(x) = {self.nm_rf_f.text()}",
                          color='#eceff4', fontsize=9)
             self.nm_rf_fig.tight_layout(pad=0.6)
-            self.nm_rf_canvas.draw()
+            self.nm_rf_canvas.draw_idle()
 
             iters = len(history)
             root_str = f"{root:.10g}" if root is not None else "not found"
@@ -6005,7 +6011,7 @@ class Karhulaattori(QMainWindow):
             self._style_axes(ax)
             ax.plot(xs_plot, ys_plot, color='#88c0d0', linewidth=2, label='f(x)')
             ax.fill_between(xs_plot, ys_plot, alpha=0.18, color='#a3be8c')
-            ax.axhline(0, color='#4c566a', linewidth=0.6)
+            ax.axhline(0, color='#7b88a8', linewidth=0.6)
 
             if method in ("trap", "compare"):
                 vis_n = min(n, 20)
@@ -6022,7 +6028,7 @@ class Karhulaattori(QMainWindow):
             ax.set_title(f"∫ f(x) dx  on [{a:.4g}, {b:.4g}]", color='#eceff4', fontsize=9)
             ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
             self.nm_int_fig.tight_layout(pad=0.6)
-            self.nm_int_canvas.draw()
+            self.nm_int_canvas.draw_idle()
 
             html = "<br>".join(
                 f"<b>{k}:</b> {v:.10g}" for k, v in results.items()
@@ -6052,7 +6058,7 @@ class Karhulaattori(QMainWindow):
         g = QGridLayout(grp)
         g.setSpacing(6)
         hint = QLabel("x values (comma/space separated):")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         g.addWidget(hint, 0, 0, 1, 2)
         self.nm_ip_x = QTextEdit("0, 1, 2, 3, 4, 5")
         self.nm_ip_x.setFixedHeight(36)
@@ -6062,7 +6068,7 @@ class Karhulaattori(QMainWindow):
         )
         g.addWidget(self.nm_ip_x, 1, 0, 1, 2)
         hint2 = QLabel("y values:")
-        hint2.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint2.setStyleSheet("color: #7b88a8; font-size: 10px;")
         g.addWidget(hint2, 2, 0, 1, 2)
         self.nm_ip_y = QTextEdit("0, 1, 4, 9, 16, 25")
         self.nm_ip_y.setFixedHeight(36)
@@ -6133,8 +6139,8 @@ class Karhulaattori(QMainWindow):
                 dd = ys.copy().astype(float)
                 coefs = [dd[0]]
                 for lvl in range(1, n):
-                    dd_new = np.diff(dd[:n-lvl]) / (xs[lvl:] - xs[:n-lvl])
-                    dd = dd_new
+                    m = len(dd) - 1
+                    dd = np.diff(dd) / (xs[lvl:lvl + m] - xs[:m])
                     coefs.append(dd[0])
                 def _newton(x_eval):
                     val = coefs[-1]
@@ -6173,7 +6179,7 @@ class Karhulaattori(QMainWindow):
             ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
             ax.set_title(method.replace('_', ' ').title(), color='#eceff4', fontsize=9)
             self.nm_ip_fig.tight_layout(pad=0.6)
-            self.nm_ip_canvas.draw()
+            self.nm_ip_canvas.draw_idle()
 
             self.nm_ip_out.setHtml(
                 f"<b>Method:</b> {method.replace('_', ' ')}<br>"
@@ -6207,7 +6213,7 @@ class Karhulaattori(QMainWindow):
             ("y values:",               "nm_fit_y", "2.1, 3.9, 8.1, 16.0, 24.9, 36.1, 49.0, 63.8"),
         ]):
             hint = QLabel(hint_text)
-            hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+            hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
             g.addWidget(hint, row*2, 0, 1, 2)
             te = QTextEdit(default)
             te.setFixedHeight(36)
@@ -6235,7 +6241,7 @@ class Karhulaattori(QMainWindow):
         mg.addWidget(self.nm_fit_custom, 1, 1)
 
         hint3 = QLabel("Parameters are any letters in the expression except x")
-        hint3.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint3.setStyleSheet("color: #7b88a8; font-size: 10px;")
         hint3.setWordWrap(True)
         mg.addWidget(hint3, 2, 0, 1, 2)
 
@@ -6348,7 +6354,7 @@ class Karhulaattori(QMainWindow):
             ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
             ax.set_title(f"Curve fit  —  {label}", color='#eceff4', fontsize=9)
             self.nm_fit_fig.tight_layout(pad=0.6)
-            self.nm_fit_canvas.draw()
+            self.nm_fit_canvas.draw_idle()
 
             self.nm_fit_out.setHtml(
                 f"<b>Model:</b> {eq}<br>"
@@ -6419,7 +6425,7 @@ class Karhulaattori(QMainWindow):
         for sp in ax.spines.values(): sp.set_visible(False)
 
         n_colors = node_colors if node_colors else ['#5e81ac'] * len(G.nodes)
-        e_colors = edge_colors if edge_colors else ['#4c566a'] * len(G.edges)
+        e_colors = edge_colors if edge_colors else ['#7b88a8'] * len(G.edges)
 
         nx.draw_networkx_nodes(G, pos, ax=ax, node_color=n_colors,
                                node_size=500, alpha=0.95)
@@ -6461,7 +6467,7 @@ class Karhulaattori(QMainWindow):
         grp = QGroupBox("Edge List")
         gl = QVBoxLayout(grp)
         hint = QLabel("One edge per line:  u v  [weight]\nExample:  A B 3")
-        hint.setStyleSheet("color: #4c566a; font-size: 10px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 10px;")
         gl.addWidget(hint)
         self._gt_edges = QTextEdit("A B 1\nA C 4\nB C 2\nB D 5\nC D 1\nD E 3\nC E 2")
         self._gt_edges.setStyleSheet(
@@ -6537,7 +6543,7 @@ class Karhulaattori(QMainWindow):
             ax = self._gt_fig.add_subplot(111)
             self._gt_draw(ax, G, title=f"Graph  —  {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
             self._gt_fig.tight_layout(pad=0.3)
-            self._gt_canvas.draw()
+            self._gt_canvas.draw_idle()
 
             deg = dict(G.degree())
             deg_seq = sorted(deg.values(), reverse=True)
@@ -6690,7 +6696,7 @@ class Karhulaattori(QMainWindow):
                           highlight_edges=highlight,
                           title=algo.replace('_', ' ').title())
             self._gt_algo_fig.tight_layout(pad=0.3)
-            self._gt_algo_canvas.draw()
+            self._gt_algo_canvas.draw_idle()
             self._gt_algo_out.setHtml(result_html)
             self._add_to_global_history("GraphTheory", algo, f"{src}→{tgt}",
                                         result_html[:120].replace('<b>','').replace('</b>',''))
@@ -6768,7 +6774,7 @@ class Karhulaattori(QMainWindow):
             ax = self._gt_mst_fig.add_subplot(111)
             self._gt_draw(ax, UG, highlight_edges=mst_edges, title=label)
             self._gt_mst_fig.tight_layout(pad=0.3)
-            self._gt_mst_canvas.draw()
+            self._gt_mst_canvas.draw_idle()
 
             edge_list = "  ".join(f"{u}-{v}" for u,v in mst_edges)
             self._gt_mst_out.setHtml(
@@ -6803,7 +6809,7 @@ class Karhulaattori(QMainWindow):
             self._gt_draw(ax, UG, node_colors=node_colors,
                           title=f"Coloring  ({num_colors} colors)")
             self._gt_mst_fig.tight_layout(pad=0.3)
-            self._gt_mst_canvas.draw()
+            self._gt_mst_canvas.draw_idle()
 
             groups = {}
             for node, color in coloring.items():
@@ -6953,7 +6959,7 @@ class Karhulaattori(QMainWindow):
                 cent = nx.degree_centrality(G)
                 cent_sorted = sorted(cent.items(), key=lambda x: -x[1])
                 max_c = max(cent.values()) if cent else 1
-                palette = ['#4c566a','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
+                palette = ['#7b88a8','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
                 node_colors = [palette[min(int(cent.get(n, 0) / max_c * 4), 4)] for n in G.nodes]
                 rows = "  ".join(f"<b>{n}:</b>{v:.3f}" for n, v in cent_sorted)
                 result_html = f"<b>Degree centrality:</b><br>{rows}"
@@ -6962,7 +6968,7 @@ class Karhulaattori(QMainWindow):
                 cent = nx.betweenness_centrality(G, weight='weight', normalized=True)
                 cent_sorted = sorted(cent.items(), key=lambda x: -x[1])
                 max_c = max(cent.values()) if cent else 1
-                palette = ['#4c566a','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
+                palette = ['#7b88a8','#5e81ac','#88c0d0','#ebcb8b','#bf616a']
                 node_colors = [palette[min(int(cent.get(n, 0) / max(max_c,1e-9) * 4), 4)] for n in G.nodes]
                 rows = "  ".join(f"<b>{n}:</b>{v:.3f}" for n, v in cent_sorted)
                 result_html = f"<b>Betweenness centrality:</b><br>{rows}"
@@ -6972,7 +6978,7 @@ class Karhulaattori(QMainWindow):
             self._gt_draw(ax, G, node_colors=node_colors,
                           title=prop.replace('_', ' ').title())
             self._gt_prop_fig.tight_layout(pad=0.3)
-            self._gt_prop_canvas.draw()
+            self._gt_prop_canvas.draw_idle()
             self._gt_prop_out.setHtml(result_html)
             self._add_to_global_history("GraphTheory", prop, "",
                                         result_html[:100].replace('<b>','').replace('</b>',''))
@@ -7021,7 +7027,7 @@ class Karhulaattori(QMainWindow):
         layout.addWidget(self._history_list_widget, 1)
 
         hint = QLabel("Double-click an entry to copy the result to clipboard.")
-        hint.setStyleSheet("color: #4c566a; font-size: 11px;")
+        hint.setStyleSheet("color: #7b88a8; font-size: 11px;")
         layout.addWidget(hint)
 
         # Buttons
