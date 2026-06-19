@@ -75,6 +75,7 @@ A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, a
 - **Special Functions** — Gamma, Digamma, Log-Gamma, Riemann Zeta, Erf/Erfc, Bessel J/Y/I/K, Airy Ai/Bi, Lambert W, Beta; evaluate or plot over range
 - **Complex Mapping** — domain colouring, phase portrait, conformal grid mapping, modulus surface for holomorphic functions f(z)
 - **Functional Analysis** — Lp norm, sup norm, L² inner product, L² distance, convolution; numerical integration over [a, b]
+- **Series & Sums** — convergence tests (Divergence, Ratio, Root, Integral, Alternating Series); exact symbolic sum via SymPy; partial sums convergence plot with exact limit line; clickable common series reference (Basel, harmonic, geometric, e, power series…)
 
 ### Numerical Methods
 - **Root Finding** — Bisection, Newton-Raphson, Secant, Regula Falsi, Brent; iteration count and convergence plot

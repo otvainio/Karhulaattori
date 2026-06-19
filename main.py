@@ -4970,6 +4970,7 @@ class Karhulaattori(QMainWindow):
         self._setup_special_functions_subtab()
         self._setup_complex_mapping_subtab()
         self._setup_functional_analysis_subtab()
+        self._setup_series_subtab()
 
     # ── Fourier ────────────────────────────────────────────────────────────
 
@@ -5699,6 +5700,254 @@ class Karhulaattori(QMainWindow):
         item = QListWidgetItem(text)
         item.setData(Qt.ItemDataRole.UserRole, entry)
         return item
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Analysis — Series & Sums subtab
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _setup_series_subtab(self):
+        tab = QWidget()
+        self._an_tabs.addTab(tab, "Series & Sums")
+        outer = QHBoxLayout(tab)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(10)
+
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setSpacing(8)
+
+        grp = QGroupBox("Series / Sum")
+        g = QGridLayout(grp)
+        g.setSpacing(6)
+        for i, (lbl, attr, val) in enumerate([
+            ("Term  a(n) =",      "sr_an",   "1/n**2"),
+            ("From  n =",         "sr_from", "1"),
+            ("To  n =",           "sr_to",   "oo"),
+            ("Partial sums  N =", "sr_N",    "60"),
+        ]):
+            g.addWidget(QLabel(lbl), i, 0)
+            f = QLineEdit(val)
+            f.setStyleSheet(self._FIELD_STYLE)
+            setattr(self, attr, f)
+            g.addWidget(f, i, 1)
+        ll.addWidget(grp)
+
+        for lbl, act in [
+            ("Check Convergence", "convergence"),
+            ("Compute Sum",       "sum"),
+            ("Plot Partial Sums", "partial"),
+            ("Common Series",     "common"),
+        ]:
+            btn = QPushButton(lbl)
+            btn.setStyleSheet(self._BTN_STYLE)
+            btn.clicked.connect(lambda _, a=act: self._run_series(a))
+            ll.addWidget(btn)
+
+        ll.addStretch()
+        outer.addWidget(left, 1)
+
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setSpacing(6)
+        self.sr_fig, self.sr_canvas = self._make_figure()
+        self.sr_ax = self.sr_fig.add_subplot(111)
+        self._style_axes(self.sr_ax)
+        self.sr_fig.tight_layout(pad=0.8)
+        rl.addWidget(self.sr_canvas, 1)
+        self._make_output(rl, "sr_out", 200)
+        self.sr_out.setOpenLinks(False)
+        self.sr_out.anchorClicked.connect(self._sr_load_preset)
+        outer.addWidget(right, 2)
+
+    _SR_PRESETS = [
+        ("Geometric  (1/2)ⁿ",        "(1/2)**n",             "0", "oo"),
+        ("p-series  1/n²  (Basel)",   "1/n**2",               "1", "oo"),
+        ("p-series  1/n³",            "1/n**3",               "1", "oo"),
+        ("Harmonic  1/n  (diverges)", "1/n",                  "1", "oo"),
+        ("Alt. harmonic  (−1)ⁿ⁺¹/n", "(-1)**(n+1)/n",        "1", "oo"),
+        ("e  =  Σ 1/n!",              "1/factorial(n)",       "0", "oo"),
+        ("Euler  Σ 1/n⁴",             "1/n**4",               "1", "oo"),
+        ("Telescoping  1/(n(n+1))",   "1/(n*(n+1))",          "1", "oo"),
+        ("Finite: n²  (1..10)",       "n**2",                 "1", "10"),
+        ("Power: xⁿ/n! at x=1",      "1**n/factorial(n)",    "0", "oo"),
+    ]
+
+    def _sr_load_preset(self, url):
+        idx = int(url.toString())
+        _, an, frm, to = self._SR_PRESETS[idx]
+        self.sr_an.setText(an)
+        self.sr_from.setText(frm)
+        self.sr_to.setText(to)
+        self._run_series("sum")
+
+    def _run_series(self, action):
+        try:
+            an_text = self.sr_an.text().strip()
+            a_expr  = sympy.sympify(an_text)
+            lower   = sympy.sympify(self.sr_from.text())
+            upper   = sympy.sympify(self.sr_to.text())
+            N       = max(2, int(self.sr_N.text()))
+
+            # Derive the variable from the expression itself so subs/lambdify
+            # always match — never create a symbol with different assumptions
+            # and expect it to substitute into a plain-symbol expression.
+            free = [s for s in a_expr.free_symbols if s.name == 'n']
+            if not free:
+                free = sorted(a_expr.free_symbols, key=str)
+            n_sym  = free[0] if free else sympy.Symbol('n')
+            # Continuous version for limit/integral tests
+            n_cont = sympy.Symbol(n_sym.name, positive=True)
+
+            if action == "convergence":
+                html = f"<b>Series:</b> &Sigma; {an_text},  n = {lower} &hellip; {upper}<br><br>"
+                # Use continuous symbol for all limit/integral computations.
+                # Never wrap in sympy.Abs before limit — sympy often fails to simplify
+                # Abs(1/n**3) to 0. Instead, compute the limit directly and use
+                # Python abs() on the float result.
+                a_cont = a_expr.subs(n_sym, n_cont)
+
+                # Divergence test
+                try:
+                    lim_an = sympy.limit(a_cont, n_cont, sympy.oo)
+                    L = abs(complex(lim_an.evalf()).real)
+                    if L > 1e-12:
+                        html += (f"<b style='color:#bf616a'>Diverges</b> — Divergence Test: "
+                                 f"lim a(n) = {lim_an} &ne; 0<br>")
+                        self.sr_out.setHtml(html)
+                        return
+                    html += f"Divergence Test: lim a(n) = {lim_an} &rarr; 0 &check;<br>"
+                except Exception:
+                    html += "Divergence Test: inconclusive<br>"
+
+                # Ratio test
+                try:
+                    an1 = a_cont.subs(n_cont, n_cont + 1)
+                    ratio_lim = sympy.limit(sympy.simplify(an1 / a_cont), n_cont, sympy.oo)
+                    L = abs(complex(ratio_lim.evalf()).real)
+                    verdict = ("<b style='color:#a3be8c'>Converges absolutely</b>" if L < 1
+                               else "<b style='color:#bf616a'>Diverges</b>" if L > 1
+                               else "Inconclusive (L = 1)")
+                    html += f"Ratio Test: L = {ratio_lim} &rarr; |L| = {L:.6g} &rarr; {verdict}<br>"
+                except Exception:
+                    html += "Ratio Test: inconclusive<br>"
+
+                # Root test
+                try:
+                    root_lim = sympy.limit(a_cont ** (sympy.Integer(1) / n_cont), n_cont, sympy.oo)
+                    L = abs(complex(root_lim.evalf()).real)
+                    verdict = ("<b style='color:#a3be8c'>Converges absolutely</b>" if L < 1
+                               else "<b style='color:#bf616a'>Diverges</b>" if L > 1
+                               else "Inconclusive (L = 1)")
+                    html += f"Root Test: L = {root_lim} &rarr; |L| = {L:.6g} &rarr; {verdict}<br>"
+                except Exception:
+                    html += "Root Test: inconclusive<br>"
+
+                # Integral test
+                try:
+                    lower_f = float(lower.evalf())
+                    integ = sympy.integrate(a_cont, (n_cont, lower_f, sympy.oo))
+                    try:
+                        iv = float(integ.evalf())
+                        if math.isfinite(iv):
+                            html += (f"Integral Test: &int;a(n)dn = {sympy.nsimplify(integ)} = {iv:.6g}"
+                                     f" &rarr; <b style='color:#a3be8c'>Converges</b><br>")
+                        else:
+                            html += f"Integral Test: &int;a(n)dn = &infin; &rarr; <b style='color:#bf616a'>Diverges</b><br>"
+                    except Exception:
+                        if integ.is_finite:
+                            html += f"Integral Test: &int;a(n)dn = {integ} &rarr; <b style='color:#a3be8c'>Converges</b><br>"
+                        elif integ == sympy.oo:
+                            html += f"Integral Test: &int;a(n)dn = &infin; &rarr; <b style='color:#bf616a'>Diverges</b><br>"
+                except Exception:
+                    html += "Integral Test: inconclusive<br>"
+
+                # Alternating series test (numeric sign check)
+                try:
+                    f_num = sympy.lambdify(n_sym, a_expr, 'math')
+                    n0 = int(float(lower.evalf()))
+                    vals = [float(f_num(int(k))) for k in range(n0, n0 + 14)]
+                    signs = [v > 0 for v in vals if v != 0]
+                    if all(signs[i] != signs[i+1] for i in range(len(signs)-1)):
+                        abs_vals = [abs(v) for v in vals]
+                        if all(abs_vals[i] >= abs_vals[i+1] for i in range(len(abs_vals)-1)) and abs_vals[-1] < abs_vals[0]:
+                            html += ("Alternating Series Test: alternating, decreasing, &rarr; 0"
+                                     " &rarr; <b style='color:#a3be8c'>Converges</b> (conditionally)<br>")
+                except Exception:
+                    pass
+
+                self.sr_out.setHtml(html)
+
+            elif action == "sum":
+                result     = sympy.summation(a_expr, (n_sym, lower, upper))
+                simplified = sympy.simplify(result)
+                try:
+                    num_val = float(simplified.evalf())
+                    num_str = f"<br><b>Numerical:</b> {num_val:.12g}"
+                except Exception:
+                    num_str = ""
+                html = (
+                    f"<b>&Sigma; {an_text}</b>,  n = {lower} &hellip; {upper}<br><br>"
+                    f"<b>Exact:</b> {simplified}{num_str}"
+                )
+                self.sr_out.setHtml(html)
+                self._add_to_global_history("Analysis·Series", "sum", an_text, str(simplified))
+
+            elif action == "partial":
+                f_num = sympy.lambdify(n_sym, a_expr, 'math')
+                n0    = int(float(lower.evalf()))
+                indices = np.arange(n0, n0 + N)
+                terms = []
+                for k in indices:
+                    try:
+                        v = f_num(int(k))
+                        terms.append(float(v.real if hasattr(v, 'real') else v))
+                    except Exception:
+                        terms.append(float(a_expr.subs(n_sym, int(k)).evalf()))
+                terms = np.array(terms, dtype=float)
+                partial = np.cumsum(terms)
+
+                try:
+                    exact = float(sympy.summation(a_expr, (n_sym, lower, sympy.oo)).evalf())
+                    # Only show reference line if the result looks finite and plausible
+                    # (sympy can return nonsense for divergent series)
+                    has_exact = math.isfinite(exact) and abs(exact) < 1e15
+                except Exception:
+                    has_exact = False
+
+                self.sr_fig.clear()
+                ax = self.sr_fig.add_subplot(111)
+                self._style_axes(ax)
+                ax.plot(indices, partial, color='#88c0d0', linewidth=1.4,
+                        marker='o', markersize=2, label='Sₙ')
+                if has_exact:
+                    ax.axhline(exact, color='#ebcb8b', linestyle='--', linewidth=1,
+                               label=f'S = {exact:.6g}')
+                ax.set_xlabel('n', color='#eceff4', fontsize=9)
+                ax.set_ylabel('Partial sum  Sₙ', color='#eceff4', fontsize=9)
+                ax.set_title(f'&Sigma; {an_text}', color='#eceff4', fontsize=9)
+                ax.legend(facecolor='#2e3440', labelcolor='#eceff4', fontsize=9)
+                self.sr_fig.tight_layout(pad=0.6)
+                self.sr_canvas.draw_idle()
+
+                self.sr_out.setHtml(
+                    f"<b>S<sub>{N}</sub> &asymp; {partial[-1]:.12g}</b><br>"
+                    f"Last term: a({indices[-1]}) &asymp; {terms[-1]:.4e}<br>"
+                    + (f"Exact limit: {exact:.12g}" if has_exact else "")
+                )
+
+            elif action == "common":
+                rows = "".join(
+                    f"<tr><td style='padding:3px 8px'>{lbl}</td>"
+                    f"<td style='padding:3px 4px'><a href='{i}' style='color:#88c0d0'>▶ Try</a></td></tr>"
+                    for i, (lbl, *_) in enumerate(self._SR_PRESETS)
+                )
+                self.sr_out.setHtml(
+                    "<b>Common Series</b> — click ▶ Try to load &amp; compute<br>"
+                    f"<table>{rows}</table>"
+                )
+
+        except Exception as e:
+            self.sr_out.setHtml(self._err_html(e))
 
     # ══════════════════════════════════════════════════════════════════════
     # Numerical Methods tab
