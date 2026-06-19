@@ -1,5 +1,7 @@
 import sys
 import json
+import math
+import re
 import os
 from datetime import datetime
 import sympy
@@ -9,6 +11,11 @@ matplotlib.use('QtAgg')
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 — registers 3D projection
+import networkx as nx
+from scipy.integrate import quad as _quad, fixed_quad, solve_ivp
+from scipy.interpolate import CubicSpline, interp1d
+from scipy.optimize import brentq, curve_fit, fsolve
+from scipy import stats as _stats, special as sc
 
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
@@ -16,7 +23,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QGridLayout, QListWidget, QListWidgetItem,
     QLabel, QSplitter, QFrame, QTabWidget, QTextBrowser, QTextEdit, QGroupBox, QScrollArea,
-    QComboBox
+    QComboBox, QCheckBox
 )
 
 # Premium Nordic Dark Theme QSS Stylesheet
@@ -260,6 +267,28 @@ class LatexCanvas(FigureCanvas):
 
 
 class Karhulaattori(QMainWindow):
+    _FIELD_STYLE = (
+        "background-color: #242933; border: 1px solid #3b4252; "
+        "border-radius: 8px; color: #eceff4; "
+        "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
+    )
+    _BTN_STYLE = (
+        "font-size: 12px; font-weight: bold; "
+        "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
+    )
+    _BTN_STYLE_SM = (
+        "font-size: 12px; font-weight: bold; "
+        "background-color: #2f384c; color: #a3be8c; min-height: 26px;"
+    )
+    _COMBO_STYLE = (
+        "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
+        "border-radius: 6px; padding: 4px; font-size: 12px;"
+    )
+
+    @staticmethod
+    def _err_html(e):
+        return self._err_html(e)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Karhulaattori - Premium Math Solver")
@@ -319,6 +348,36 @@ class Karhulaattori(QMainWindow):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.clicked.connect(lambda: QApplication.clipboard().setText(canvas._current_latex))
         return btn
+
+    # ── Shared plot/widget helpers ─────────────────────────────────────────
+
+    def _style_axes(self, ax, equal=False):
+        ax.set_facecolor('#242933')
+        ax.tick_params(colors='#eceff4', labelsize=8)
+        for sp in ax.spines.values():
+            sp.set_edgecolor('#3b4252')
+        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        if equal:
+            ax.set_aspect('equal', adjustable='datalim')
+
+    def _make_output(self, layout, attr, max_h=120):
+        tb = QTextBrowser()
+        tb.setMaximumHeight(max_h)
+        tb.setStyleSheet(
+            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
+            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
+        )
+        setattr(self, attr, tb)
+        layout.addWidget(tb)
+
+    def _make_figure(self):
+        fig = Figure(facecolor='#1e222b')
+        return fig, FigureCanvas(fig)
+
+    def _gt_get_graph(self):
+        if self._gt_graph is None:
+            self._gt_graph = self._gt_parse_graph()
+        return self._gt_graph
 
     def setup_calculator_tab(self):
         calc_widget = QWidget()
@@ -733,40 +792,10 @@ class Karhulaattori(QMainWindow):
         outer.setContentsMargins(4, 4, 4, 4)
         self._geo_tabs = QTabWidget()
         outer.addWidget(self._geo_tabs)
-        self._geo_field = (
-            "background-color: #242933; border: 1px solid #3b4252; "
-            "border-radius: 8px; color: #eceff4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
-        )
-        self._geo_btn = (
-            "font-size: 12px; font-weight: bold; "
-            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
-        )
         self._setup_geo_triangle()
         self._setup_geo_conics()
         self._setup_geo_shapes()
         self._setup_geo_transforms()
-
-    # ── helpers ─────────────────────────────────────────────────────────────
-
-    def _geo_axes(self, ax, equal=True):
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for sp in ax.spines.values():
-            sp.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
-        if equal:
-            ax.set_aspect('equal', adjustable='datalim')
-
-    def _geo_output(self, layout, attr, max_h=120):
-        tb = QTextBrowser()
-        tb.setMaximumHeight(max_h)
-        tb.setStyleSheet(
-            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
-            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
-        )
-        setattr(self, attr, tb)
-        layout.addWidget(tb)
 
     # ── Triangle Solver ──────────────────────────────────────────────────────
 
@@ -793,7 +822,7 @@ class Karhulaattori(QMainWindow):
         for col, name in enumerate(['a', 'b', 'c', 'A', 'B', 'C']):
             g.addWidget(QLabel(name + " ="), 1, col % 3 * 2)
             le = QLineEdit()
-            le.setStyleSheet(self._geo_field)
+            le.setStyleSheet(self._FIELD_STYLE)
             le.setPlaceholderText("?")
             g.addWidget(le, 1 + col // 3, col % 3 * 2 + 1)
             self._tri_fields[name] = le
@@ -806,13 +835,13 @@ class Karhulaattori(QMainWindow):
             ("30-60-90", dict(a='1', b='', c='2', A='30', B='60', C='90')),
         ]:
             btn = QPushButton(label)
-            btn.setStyleSheet(self._geo_btn.replace("min-height: 34px", "min-height: 26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, v=vals: [self._tri_fields[k].setText(v[k]) for k in v])
             preset_row.addWidget(btn)
         g.addLayout(preset_row, 4, 0, 1, 6)
 
         solve_btn = QPushButton("Solve Triangle")
-        solve_btn.setStyleSheet(self._geo_btn)
+        solve_btn.setStyleSheet(self._BTN_STYLE)
         solve_btn.clicked.connect(self._run_triangle)
         g.addWidget(solve_btn, 5, 0, 1, 6)
         ll.addWidget(grp)
@@ -822,14 +851,12 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._geo_tri_fig = Figure(facecolor='#1e222b')
-        self._geo_tri_canvas = FigureCanvas(self._geo_tri_fig)
+        self._geo_tri_fig, self._geo_tri_canvas = self._make_figure()
         rl.addWidget(self._geo_tri_canvas, 1)
-        self._geo_output(rl, '_geo_tri_out', 140)
+        self._make_output(rl, '_geo_tri_out', 140)
         outer.addWidget(right, 3)
 
     def _run_triangle(self):
-        import math as _m
         try:
             def _get(name):
                 t = self._tri_fields[name].text().strip()
@@ -839,7 +866,7 @@ class Karhulaattori(QMainWindow):
             A, B, C = _get('A'), _get('B'), _get('C')
 
             # Convert angles to radians
-            def r(deg): return _m.radians(deg) if deg is not None else None
+            def r(deg): return math.radians(deg) if deg is not None else None
             Ar, Br, Cr = r(A), r(B), r(C)
 
             known_sides  = sum(x is not None for x in [a, b, c])
@@ -855,42 +882,42 @@ class Karhulaattori(QMainWindow):
             # SSS
             if known_sides == 3 and a and b and c:
                 cos_A = (b**2 + c**2 - a**2) / (2*b*c)
-                A = _m.degrees(_m.acos(max(-1, min(1, cos_A)))); Ar = r(A)
+                A = math.degrees(math.acos(max(-1, min(1, cos_A)))); Ar = r(A)
                 cos_B = (a**2 + c**2 - b**2) / (2*a*c)
-                B = _m.degrees(_m.acos(max(-1, min(1, cos_B)))); Br = r(B)
+                B = math.degrees(math.acos(max(-1, min(1, cos_B)))); Br = r(B)
                 C = 180 - A - B; Cr = r(C)
             # SAS
             elif known_sides == 2 and known_angles >= 1:
                 if a and b and Cr:
-                    c = _m.sqrt(a**2 + b**2 - 2*a*b*_m.cos(Cr))
-                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = _m.degrees(_m.acos(max(-1,min(1,cos_A)))); Ar=r(A)
+                    c = math.sqrt(a**2 + b**2 - 2*a*b*math.cos(Cr))
+                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = math.degrees(math.acos(max(-1,min(1,cos_A)))); Ar=r(A)
                     B = 180 - A - C; Br = r(B)
                 elif a and c and Br:
-                    b = _m.sqrt(a**2 + c**2 - 2*a*c*_m.cos(Br))
-                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = _m.degrees(_m.acos(max(-1,min(1,cos_A)))); Ar=r(A)
+                    b = math.sqrt(a**2 + c**2 - 2*a*c*math.cos(Br))
+                    cos_A = (b**2 + c**2 - a**2)/(2*b*c); A = math.degrees(math.acos(max(-1,min(1,cos_A)))); Ar=r(A)
                     C = 180 - A - B; Cr = r(C)
                 elif b and c and Ar:
-                    a = _m.sqrt(b**2 + c**2 - 2*b*c*_m.cos(Ar))
-                    cos_B = (a**2 + c**2 - b**2)/(2*a*c); B = _m.degrees(_m.acos(max(-1,min(1,cos_B)))); Br=r(B)
+                    a = math.sqrt(b**2 + c**2 - 2*b*c*math.cos(Ar))
+                    cos_B = (a**2 + c**2 - b**2)/(2*a*c); B = math.degrees(math.acos(max(-1,min(1,cos_B)))); Br=r(B)
                     C = 180 - A - B; Cr = r(C)
             # ASA / AAS — law of sines
             elif known_angles == 3 and known_sides >= 1:
                 if a and Ar:
-                    k = a / _m.sin(Ar)
+                    k = a / math.sin(Ar)
                 elif b and Br:
-                    k = b / _m.sin(Br)
+                    k = b / math.sin(Br)
                 else:
-                    k = c / _m.sin(Cr)
-                if not a: a = k * _m.sin(Ar)
-                if not b: b = k * _m.sin(Br)
-                if not c: c = k * _m.sin(Cr)
+                    k = c / math.sin(Cr)
+                if not a: a = k * math.sin(Ar)
+                if not b: b = k * math.sin(Br)
+                if not c: c = k * math.sin(Cr)
 
             if None in (a, b, c, A, B, C):
                 raise ValueError("Not enough information to solve the triangle.")
 
             # Derived quantities
             s = (a + b + c) / 2
-            area = _m.sqrt(s*(s-a)*(s-b)*(s-c))
+            area = math.sqrt(s*(s-a)*(s-b)*(s-c))
             R = (a * b * c) / (4 * area)   # circumradius
             r_in = area / s                  # inradius
             h_a = 2*area / a
@@ -898,12 +925,12 @@ class Karhulaattori(QMainWindow):
             # Build triangle vertices: place c on x-axis, A at origin
             Bx, By = c, 0.0
             Cx = (a**2 - b**2 + c**2) / (2*c)
-            Cy = _m.sqrt(max(0, a**2 - (c - Cx)**2)) if a**2 - (c-Cx)**2 >= 0 else 0
+            Cy = math.sqrt(max(0, a**2 - (c - Cx)**2)) if a**2 - (c-Cx)**2 >= 0 else 0
             verts = np.array([[0,0],[Bx,By],[Cx,Cy],[0,0]])
 
             self._geo_tri_fig.clear()
             ax = self._geo_tri_fig.add_subplot(111)
-            self._geo_axes(ax)
+            self._style_axes(ax, equal=True)
             ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
             ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.12, color='#88c0d0')
             for (px,py), lbl in zip([(0,0),(Bx,By),(Cx,Cy)], ['A','B','C']):
@@ -930,7 +957,7 @@ class Karhulaattori(QMainWindow):
                                         f"a={a:.4g},b={b:.4g},c={c:.4g}",
                                         f"A={A:.3g}°,B={B:.3g}°,C={C:.3g}°,area={area:.4g}")
         except Exception as e:
-            self._geo_tri_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._geo_tri_out.setHtml(self._err_html(e))
 
     # ── Conics ───────────────────────────────────────────────────────────────
 
@@ -952,8 +979,7 @@ class Karhulaattori(QMainWindow):
         self._geo_conic_type = QComboBox()
         self._geo_conic_type.addItems(["Circle", "Ellipse", "Parabola", "Hyperbola"])
         self._geo_conic_type.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         self._geo_conic_type.currentIndexChanged.connect(self._update_conic_hints)
         g.addWidget(self._geo_conic_type, 0, 1)
@@ -967,7 +993,7 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._geo_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             self._conic_params[attr] = (g.itemAtPosition(row,0).widget(), w)
             g.addWidget(w, row, 1)
@@ -978,7 +1004,7 @@ class Karhulaattori(QMainWindow):
         g.addWidget(self._conic_hint, 5, 0, 1, 2)
 
         plot_btn = QPushButton("Plot Conic")
-        plot_btn.setStyleSheet(self._geo_btn)
+        plot_btn.setStyleSheet(self._BTN_STYLE)
         plot_btn.clicked.connect(self._run_conic)
         g.addWidget(plot_btn, 6, 0, 1, 2)
         ll.addWidget(grp)
@@ -988,10 +1014,9 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._geo_con_fig = Figure(facecolor='#1e222b')
-        self._geo_con_canvas = FigureCanvas(self._geo_con_fig)
+        self._geo_con_fig, self._geo_con_canvas = self._make_figure()
         rl.addWidget(self._geo_con_canvas, 1)
-        self._geo_output(rl, '_geo_con_out', 120)
+        self._make_output(rl, '_geo_con_out', 120)
         outer.addWidget(right, 3)
         self._update_conic_hints()
 
@@ -1006,7 +1031,6 @@ class Karhulaattori(QMainWindow):
         self._conic_hint.setText(hints.get(t, ""))
 
     def _run_conic(self):
-        import math as _m
         try:
             t = self._geo_conic_type.currentText()
             h = float(self._cp_h.text()); k = float(self._cp_k.text())
@@ -1014,7 +1038,7 @@ class Karhulaattori(QMainWindow):
 
             self._geo_con_fig.clear()
             ax = self._geo_con_fig.add_subplot(111)
-            self._geo_axes(ax)
+            self._style_axes(ax, equal=True)
             ax.axhline(0, color='#4c566a', linewidth=0.6)
             ax.axvline(0, color='#4c566a', linewidth=0.6)
 
@@ -1028,17 +1052,17 @@ class Karhulaattori(QMainWindow):
                     f"Circle:  (x−{h})² + (y−{k})² = {a}²",
                     f"Radius r = {a}",
                     f"Diameter = {2*a:.6g}",
-                    f"Area = π·r² = {_m.pi*a**2:.6g}",
-                    f"Circumference = 2π·r = {2*_m.pi*a:.6g}",
+                    f"Area = π·r² = {math.pi*a**2:.6g}",
+                    f"Circumference = 2π·r = {2*math.pi*a:.6g}",
                 ]
 
             elif t == "Ellipse":
                 th = np.linspace(0, 2*np.pi, 400)
                 ax.plot(h + a*np.cos(th), k + b*np.sin(th), color='#88c0d0', linewidth=2)
                 ax.plot(h, k, '+', color='#ebcb8b', markersize=10)
-                c_val = _m.sqrt(abs(a**2 - b**2))
+                c_val = math.sqrt(abs(a**2 - b**2))
                 e = c_val / a if a > 0 else 0
-                area = _m.pi * a * b
+                area = math.pi * a * b
                 # Foci
                 if a >= b:
                     ax.plot([h-c_val, h+c_val], [k, k], 'o', color='#bf616a', markersize=6)
@@ -1077,7 +1101,7 @@ class Karhulaattori(QMainWindow):
                 ax.plot(h + a/np.cos(t_vals), k + b*np.tan(t_vals), color='#88c0d0', linewidth=2)
                 # Left branch
                 ax.plot(h - a/np.cos(t_vals), k + b*np.tan(t_vals), color='#88c0d0', linewidth=2)
-                c_val = _m.sqrt(a**2 + b**2)
+                c_val = math.sqrt(a**2 + b**2)
                 e = c_val / a
                 # Foci
                 ax.plot([h-c_val, h+c_val], [k, k], 'o', color='#bf616a', markersize=6)
@@ -1100,7 +1124,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("Geometry·Conics", t, f"h={h},k={k},a={a},b={b}", info_lines[0])
 
         except Exception as e:
-            self._geo_con_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._geo_con_out.setHtml(self._err_html(e))
 
     # ── 2D Shapes ────────────────────────────────────────────────────────────
 
@@ -1125,8 +1149,7 @@ class Karhulaattori(QMainWindow):
             "Regular Polygon", "Sector", "Annulus", "Trapezoid",
         ])
         self._geo_shape_type.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         g.addWidget(self._geo_shape_type, 0, 1)
 
@@ -1139,12 +1162,12 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._geo_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
         calc_btn = QPushButton("Calculate & Draw")
-        calc_btn.setStyleSheet(self._geo_btn)
+        calc_btn.setStyleSheet(self._BTN_STYLE)
         calc_btn.clicked.connect(self._run_shape)
         g.addWidget(calc_btn, 5, 0, 1, 2)
         ll.addWidget(grp)
@@ -1154,14 +1177,12 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._geo_shp_fig = Figure(facecolor='#1e222b')
-        self._geo_shp_canvas = FigureCanvas(self._geo_shp_fig)
+        self._geo_shp_fig, self._geo_shp_canvas = self._make_figure()
         rl.addWidget(self._geo_shp_canvas, 1)
-        self._geo_output(rl, '_geo_shp_out', 130)
+        self._make_output(rl, '_geo_shp_out', 130)
         outer.addWidget(right, 3)
 
     def _run_shape(self):
-        import math as _m
         try:
             t  = self._geo_shape_type.currentText()
             p1 = float(self._sp1.text())
@@ -1171,7 +1192,7 @@ class Karhulaattori(QMainWindow):
 
             self._geo_shp_fig.clear()
             ax = self._geo_shp_fig.add_subplot(111)
-            self._geo_axes(ax)
+            self._style_axes(ax, equal=True)
 
             info = {}
 
@@ -1181,14 +1202,14 @@ class Karhulaattori(QMainWindow):
                 ax.fill(r*np.cos(th), r*np.sin(th), alpha=0.18, color='#88c0d0')
                 ax.plot(r*np.cos(th), r*np.sin(th), color='#88c0d0', linewidth=2)
                 info = {"Radius": r, "Diameter": 2*r,
-                        "Area": _m.pi*r**2, "Circumference": 2*_m.pi*r}
+                        "Area": math.pi*r**2, "Circumference": 2*math.pi*r}
 
             elif t == "Rectangle":
                 w, h = p1, p2
                 rect = np.array([[0,0],[w,0],[w,h],[0,h],[0,0]])
                 ax.fill(rect[:-1,0], rect[:-1,1], alpha=0.18, color='#88c0d0')
                 ax.plot(rect[:,0], rect[:,1], color='#88c0d0', linewidth=2)
-                diag = _m.sqrt(w**2+h**2)
+                diag = math.sqrt(w**2+h**2)
                 info = {"Width": w, "Height": h, "Area": w*h,
                         "Perimeter": 2*(w+h), "Diagonal": diag}
 
@@ -1198,26 +1219,26 @@ class Karhulaattori(QMainWindow):
                 ax.fill(sq[:-1,0], sq[:-1,1], alpha=0.18, color='#88c0d0')
                 ax.plot(sq[:,0], sq[:,1], color='#88c0d0', linewidth=2)
                 info = {"Side": s, "Area": s**2,
-                        "Perimeter": 4*s, "Diagonal": s*_m.sqrt(2)}
+                        "Perimeter": 4*s, "Diagonal": s*math.sqrt(2)}
 
             elif t == "Triangle (equilateral)":
                 s = p1
-                h_tri = s * _m.sqrt(3) / 2
+                h_tri = s * math.sqrt(3) / 2
                 verts = np.array([[0,0],[s,0],[s/2,h_tri],[0,0]])
                 ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.18, color='#88c0d0')
                 ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
                 info = {"Side": s, "Height": h_tri,
-                        "Area": _m.sqrt(3)/4*s**2, "Perimeter": 3*s,
-                        "Inradius": s/(2*_m.sqrt(3)), "Circumradius": s/_m.sqrt(3)}
+                        "Area": math.sqrt(3)/4*s**2, "Perimeter": 3*s,
+                        "Inradius": s/(2*math.sqrt(3)), "Circumradius": s/math.sqrt(3)}
 
             elif t == "Regular Polygon":
                 s = p1; n = int(p2)
-                R = s / (2 * _m.sin(_m.pi/n))
-                angles = np.linspace(0, 2*np.pi, n+1) + _m.pi/2
+                R = s / (2 * math.sin(math.pi/n))
+                angles = np.linspace(0, 2*np.pi, n+1) + math.pi/2
                 xs_p = R * np.cos(angles); ys_p = R * np.sin(angles)
                 ax.fill(xs_p[:-1], ys_p[:-1], alpha=0.18, color='#88c0d0')
                 ax.plot(xs_p, ys_p, color='#88c0d0', linewidth=2)
-                apothem = R * _m.cos(_m.pi/n)
+                apothem = R * math.cos(math.pi/n)
                 area = 0.5 * n * s * apothem
                 info = {"Sides n": n, "Side length": s,
                         "Circumradius R": R, "Apothem": apothem,
@@ -1226,7 +1247,7 @@ class Karhulaattori(QMainWindow):
 
             elif t == "Sector":
                 r = p1; angle_deg = p3
-                angle_rad = _m.radians(angle_deg)
+                angle_rad = math.radians(angle_deg)
                 th = np.linspace(0, angle_rad, 300)
                 xs_s = np.concatenate([[0], r*np.cos(th), [0]])
                 ys_s = np.concatenate([[0], r*np.sin(th), [0]])
@@ -1236,7 +1257,7 @@ class Karhulaattori(QMainWindow):
                 area = 0.5 * r**2 * angle_rad
                 info = {"Radius": r, "Angle °": angle_deg,
                         "Arc length": arc_len, "Area": area,
-                        "Chord length": 2*r*_m.sin(angle_rad/2)}
+                        "Chord length": 2*r*math.sin(angle_rad/2)}
 
             elif t == "Annulus":
                 R_out, R_in = p1, p2
@@ -1246,9 +1267,9 @@ class Karhulaattori(QMainWindow):
                 ax.plot(R_out*np.cos(th), R_out*np.sin(th), color='#88c0d0', linewidth=2)
                 ax.plot(R_in*np.cos(th), R_in*np.sin(th), color='#88c0d0', linewidth=2)
                 info = {"Outer radius": R_out, "Inner radius": R_in,
-                        "Area": _m.pi*(R_out**2-R_in**2),
-                        "Outer circ.": 2*_m.pi*R_out,
-                        "Inner circ.": 2*_m.pi*R_in}
+                        "Area": math.pi*(R_out**2-R_in**2),
+                        "Outer circ.": 2*math.pi*R_out,
+                        "Inner circ.": 2*math.pi*R_in}
 
             elif t == "Trapezoid":
                 b1, b2, h = p3, p4, p2
@@ -1256,11 +1277,10 @@ class Karhulaattori(QMainWindow):
                 verts = np.array([[0,0],[b1,0],[b1+offset,h],[-offset,h],[0,0]])
                 ax.fill(verts[:-1,0], verts[:-1,1], alpha=0.18, color='#88c0d0')
                 ax.plot(verts[:,0], verts[:,1], color='#88c0d0', linewidth=2)
-                leg1 = _m.sqrt(offset**2 + h**2)
-                leg2 = _m.sqrt(offset**2 + h**2)
+                leg = math.sqrt(offset**2 + h**2)
                 info = {"Base 1": b1, "Base 2": b2, "Height": h,
                         "Area": (b1+b2)*h/2,
-                        "Perimeter": b1+b2+leg1+leg2,
+                        "Perimeter": b1+b2+2*leg,
                         "Median": (b1+b2)/2}
 
             ax.set_title(t, color='#eceff4', fontsize=9)
@@ -1274,7 +1294,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("Geometry·Shapes", t, "", summary[:200])
 
         except Exception as e:
-            self._geo_shp_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._geo_shp_out.setHtml(self._err_html(e))
 
     # ── Transformations ───────────────────────────────────────────────────────
 
@@ -1307,7 +1327,7 @@ class Karhulaattori(QMainWindow):
             ("Star", "0,2; 0.6,0.8; 2,0.6; 0.9,-0.2; 1.2,-1.6; 0,-0.6; -1.2,-1.6; -0.9,-0.2; -2,0.6; -0.6,0.8"),
         ]:
             btn = QPushButton(label)
-            btn.setStyleSheet(self._geo_btn.replace("min-height: 34px", "min-height: 26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, p=pts: self._geo_xf_pts.setPlainText(p))
             preset_row.addWidget(btn)
         sg.addLayout(preset_row, 1, 0, 1, 2)
@@ -1323,8 +1343,7 @@ class Karhulaattori(QMainWindow):
             "Shear", "Custom Matrix",
         ])
         self._geo_xf_type.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         xg.addWidget(self._geo_xf_type, 0, 1)
 
@@ -1338,12 +1357,12 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             xg.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._geo_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             xg.addWidget(w, row, 1)
 
         apply_btn = QPushButton("Apply Transformation")
-        apply_btn.setStyleSheet(self._geo_btn)
+        apply_btn.setStyleSheet(self._BTN_STYLE)
         apply_btn.clicked.connect(self._run_transform)
         xg.addWidget(apply_btn, 7, 0, 1, 2)
         ll.addWidget(xf_grp)
@@ -1353,10 +1372,9 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._geo_xf_fig = Figure(facecolor='#1e222b')
-        self._geo_xf_canvas = FigureCanvas(self._geo_xf_fig)
+        self._geo_xf_fig, self._geo_xf_canvas = self._make_figure()
         rl.addWidget(self._geo_xf_canvas, 1)
-        self._geo_output(rl, '_geo_xf_out', 100)
+        self._make_output(rl, '_geo_xf_out', 100)
         outer.addWidget(right, 3)
 
     def _parse_pts(self, text):
@@ -1371,7 +1389,6 @@ class Karhulaattori(QMainWindow):
         return np.array(pts)
 
     def _run_transform(self):
-        import math as _m
         try:
             pts = self._parse_pts(self._geo_xf_pts.toPlainText())
             if len(pts) < 2:
@@ -1386,9 +1403,9 @@ class Karhulaattori(QMainWindow):
             centered = pts - pivot
 
             if t == "Rotation":
-                theta = _m.radians(p1)
-                M = np.array([[_m.cos(theta), -_m.sin(theta)],
-                               [_m.sin(theta),  _m.cos(theta)]])
+                theta = math.radians(p1)
+                M = np.array([[math.cos(theta), -math.sin(theta)],
+                               [math.sin(theta),  math.cos(theta)]])
                 new_pts = (M @ centered.T).T + pivot
                 desc = f"Rotation {p1}° about ({p3},{p4})"
 
@@ -1434,7 +1451,7 @@ class Karhulaattori(QMainWindow):
 
             self._geo_xf_fig.clear()
             ax = self._geo_xf_fig.add_subplot(111)
-            self._geo_axes(ax)
+            self._style_axes(ax, equal=True)
             ax.axhline(0, color='#4c566a', linewidth=0.5)
             ax.axvline(0, color='#4c566a', linewidth=0.5)
 
@@ -1464,7 +1481,7 @@ class Karhulaattori(QMainWindow):
                                         f"{len(pts)} pts", desc)
 
         except Exception as e:
-            self._geo_xf_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._geo_xf_out.setHtml(self._err_html(e))
 
     def setup_linear_algebra_tab(self):
         la_widget = QWidget()
@@ -1700,7 +1717,7 @@ class Karhulaattori(QMainWindow):
                     )
 
         except Exception as e:
-            self.la_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.la_output.setHtml(self._err_html(e))
             self.la_result_latex.render("")
 
 
@@ -1970,7 +1987,7 @@ class Karhulaattori(QMainWindow):
         # Replace y'' with y(x).diff(x,2) and y' with y(x).diff(x)
         text = text.replace("y''", "y(x).diff(x,2)").replace("y'", "y(x).diff(x)")
         # Replace bare y (not followed by '(' to avoid touching y(x)) with y(x)
-        import re
+
         text = re.sub(r'\by\b(?!\()', 'y(x)', text)
 
         if '=' in text:
@@ -2686,9 +2703,7 @@ class Karhulaattori(QMainWindow):
 
     def _init_argand_axes(self):
         ax = self.cx_ax
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4')
-        ax.grid(color='#2e3440', linestyle='--')
+        self._style_axes(ax, equal=True)
         ax.axhline(0, color='#4c566a', linewidth=1.2)
         ax.axvline(0, color='#4c566a', linewidth=1.2)
         ax.set_xlabel('Re', color='#81a1c1')
@@ -2704,7 +2719,7 @@ class Karhulaattori(QMainWindow):
             z_rect = sympy.simplify(z.rewrite(sympy.cos))
             self.cx_z1.setText(str(sympy.expand(sympy.nsimplify(z_rect))))
         except Exception as e:
-            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.cx_output.setHtml(self._err_html(e))
 
     def _plot_argand(self):
         try:
@@ -2802,7 +2817,7 @@ class Karhulaattori(QMainWindow):
                 _set("z₁²", r"z_1^2 = " + _cx_latex(z1 ** 2))
 
         except Exception as e:
-            self.cx_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.cx_output.setHtml(self._err_html(e))
             self.cx_result_latex.render("")
 
 
@@ -3076,7 +3091,7 @@ class Karhulaattori(QMainWindow):
                       sympy.latex(expr) + r" = " + sympy.latex(res))
 
         except Exception as e:
-            self.calc_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.calc_output.setHtml(self._err_html(e))
             self.calc_result_latex.render("")
 
     # ══════════════════════════════════════════════════════════════════════
@@ -3090,40 +3105,10 @@ class Karhulaattori(QMainWindow):
         outer.setContentsMargins(4, 4, 4, 4)
         self._de_tabs = QTabWidget()
         outer.addWidget(self._de_tabs)
-        self._de_field = (
-            "background-color: #242933; border: 1px solid #3b4252; "
-            "border-radius: 8px; color: #eceff4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
-        )
-        self._de_btn = (
-            "font-size: 12px; font-weight: bold; "
-            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
-        )
         self._setup_de_symbolic()
         self._setup_de_numerical()
         self._setup_de_phase()
         self._setup_de_pde()
-
-    # ── helpers ────────────────────────────────────────────────────────────
-
-    def _de_axes(self, ax, equal=False):
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for sp in ax.spines.values():
-            sp.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
-        if equal:
-            ax.set_aspect('equal', adjustable='datalim')
-
-    def _de_output(self, layout, attr, max_h=80):
-        tb = QTextBrowser()
-        tb.setMaximumHeight(max_h)
-        tb.setStyleSheet(
-            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
-            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
-        )
-        setattr(self, attr, tb)
-        layout.addWidget(tb)
 
     # ── Symbolic ODE ───────────────────────────────────────────────────────
 
@@ -3147,7 +3132,7 @@ class Karhulaattori(QMainWindow):
         g.addWidget(hint, 0, 0, 1, 2)
         g.addWidget(QLabel("ODE:"), 1, 0)
         self._de_sym_ode = QLineEdit("y'' + y = 0")
-        self._de_sym_ode.setStyleSheet(self._de_field)
+        self._de_sym_ode.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_sym_ode, 1, 1)
 
         ic_hint = QLabel("Initial conditions  (optional, comma-separated):\nExamples:  y(0)=1   y(0)=1, y'(0)=0")
@@ -3156,12 +3141,12 @@ class Karhulaattori(QMainWindow):
         g.addWidget(ic_hint, 2, 0, 1, 2)
         g.addWidget(QLabel("ICs:"), 3, 0)
         self._de_sym_ics = QLineEdit("y(0)=1, y'(0)=0")
-        self._de_sym_ics.setStyleSheet(self._de_field)
+        self._de_sym_ics.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_sym_ics, 3, 1)
 
         for lbl, act in [("Solve (general)", "general"), ("Solve with ICs", "particular")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_de_symbolic(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
 
@@ -3176,7 +3161,7 @@ class Karhulaattori(QMainWindow):
         preset_row = QGridLayout()
         for idx, (lbl, ode, ics) in enumerate(presets):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, o=ode, i=ics: (
                 self._de_sym_ode.setText(o), self._de_sym_ics.setText(i)))
             preset_row.addWidget(btn, idx//3, idx%3)
@@ -3192,10 +3177,9 @@ class Karhulaattori(QMainWindow):
         rl.addWidget(self._de_sym_latex)
         rl.addWidget(self._copy_latex_btn(self._de_sym_latex),
                      alignment=Qt.AlignmentFlag.AlignRight)
-        self._de_sym_fig = Figure(facecolor='#1e222b')
-        self._de_sym_canvas = FigureCanvas(self._de_sym_fig)
+        self._de_sym_fig, self._de_sym_canvas = self._make_figure()
         rl.addWidget(self._de_sym_canvas, 1)
-        self._de_output(rl, '_de_sym_out', 60)
+        self._make_output(rl, '_de_sym_out', 60)
         outer.addWidget(right, 3)
 
     def _run_de_symbolic(self, mode):
@@ -3221,13 +3205,13 @@ class Karhulaattori(QMainWindow):
                 self._plot_de_sym_sol(sol, x_s)
         except Exception as e:
             self._de_sym_latex.render(r"\text{Error: }" + str(e)[:50])
-            self._de_sym_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._de_sym_out.setHtml(self._err_html(e))
 
     def _parse_de_ics(self, text, x_sym, y_func):
         """Parse 'y(0)=1, y'(0)=0' → dict for dsolve ics kwarg."""
         if not text.strip():
             return {}
-        import re
+
         ics = {}
         x = x_sym; y = y_func
         for part in text.split(','):
@@ -3261,7 +3245,7 @@ class Karhulaattori(QMainWindow):
                 return
             self._de_sym_fig.clear()
             ax = self._de_sym_fig.add_subplot(111)
-            self._de_axes(ax)
+            self._style_axes(ax)
             ax.plot(xs, ys, color='#88c0d0', linewidth=2)
             ax.axhline(0, color='#4c566a', linewidth=0.6)
             ax.set_title("Solution  y(x)", color='#eceff4', fontsize=9)
@@ -3297,7 +3281,7 @@ class Karhulaattori(QMainWindow):
 
         g.addWidget(QLabel("f(t,y) ="), 1, 0)
         self._de_num_f = QLineEdit("-y + sin(t)")
-        self._de_num_f.setStyleSheet(self._de_field)
+        self._de_num_f.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_num_f, 1, 1)
 
         for row, (lbl, attr, default) in enumerate([
@@ -3308,7 +3292,7 @@ class Karhulaattori(QMainWindow):
         ], start=2):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._de_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
@@ -3323,7 +3307,7 @@ class Karhulaattori(QMainWindow):
             ("Compare Euler/RK4/RK45", "compare"),
         ]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_de_numerical(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
 
@@ -3336,7 +3320,7 @@ class Karhulaattori(QMainWindow):
         ]
         for idx, (lbl, f, y0, t0, tf, h) in enumerate(presets_num):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, fv=f, y0v=y0, t0v=t0, tfv=tf, hv=h: (
                 self._de_num_f.setText(fv), self._de_num_y0.setText(y0v),
                 self._de_num_t0.setText(t0v), self._de_num_tf.setText(tfv),
@@ -3350,15 +3334,14 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._de_num_fig = Figure(facecolor='#1e222b')
-        self._de_num_canvas = FigureCanvas(self._de_num_fig)
+        self._de_num_fig, self._de_num_canvas = self._make_figure()
         rl.addWidget(self._de_num_canvas, 1)
-        self._de_output(rl, '_de_num_out', 80)
+        self._make_output(rl, '_de_num_out', 80)
         outer.addWidget(right, 3)
 
     def _de_parse_rhs(self, expr_str, t_val, y_arr):
         """Evaluate f(t, y) string; supports scalar y or y[i] indexing."""
-        import re
+
         s = expr_str.strip()
         # Build namespace
         ns = {
@@ -3372,7 +3355,7 @@ class Karhulaattori(QMainWindow):
         return np.array([float(eval(s, ns))])
 
     def _run_de_numerical(self, method):
-        from scipy.integrate import solve_ivp
+
         try:
             f_str = self._de_num_f.text()
             y0 = np.array([float(v) for v in self._de_num_y0.text().split(',')])
@@ -3438,14 +3421,12 @@ class Karhulaattori(QMainWindow):
             n_comp = len(y0)
             n_axes = n_comp + (1 if n_comp == 2 else 0)  # + phase plane if 2D
             axes = self._de_num_fig.subplots(1, n_axes) if n_axes > 1 else [self._de_num_fig.add_subplot(111)]
-            if n_axes == 1:
-                axes = [axes[0]]
 
             colors = ['#88c0d0','#a3be8c','#ebcb8b','#bf616a']
             comp_labels = [f"y[{i}]" if n_comp > 1 else "y" for i in range(n_comp)]
 
             for ax in axes[:n_comp]:
-                self._de_axes(ax)
+                self._style_axes(ax)
             if n_comp == 2:
                 self._de_axes(axes[2], equal=False)
 
@@ -3480,7 +3461,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("DE·Numerical", method, f_str,
                                         f"t_end={tf}, steps={len(ts)-1}")
         except Exception as e:
-            self._de_num_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._de_num_out.setHtml(self._err_html(e))
 
     # ── Phase Portrait ─────────────────────────────────────────────────────
 
@@ -3504,12 +3485,12 @@ class Karhulaattori(QMainWindow):
 
         g.addWidget(QLabel("f(x,y) ="), 1, 0)
         self._de_ph_f = QLineEdit("y")
-        self._de_ph_f.setStyleSheet(self._de_field)
+        self._de_ph_f.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_ph_f, 1, 1)
 
         g.addWidget(QLabel("g(x,y) ="), 2, 0)
         self._de_ph_g = QLineEdit("-x - 0.3*y")
-        self._de_ph_g.setStyleSheet(self._de_field)
+        self._de_ph_g.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_ph_g, 2, 1)
 
         for row, (lbl, attr, default) in enumerate([
@@ -3523,7 +3504,7 @@ class Karhulaattori(QMainWindow):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
             w.setFixedWidth(70)
-            w.setStyleSheet(self._de_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
@@ -3538,7 +3519,7 @@ class Karhulaattori(QMainWindow):
         pg = QGridLayout()
         for idx, (lbl, f, g_str, x1,x2,y1,y2) in enumerate(presets_ph):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, fv=f, gv=g_str, x1v=x1,x2v=x2,y1v=y1,y2v=y2: (
                 self._de_ph_f.setText(fv), self._de_ph_g.setText(gv),
                 self._de_ph_xmin.setText(x1v), self._de_ph_xmax.setText(x2v),
@@ -3550,7 +3531,7 @@ class Karhulaattori(QMainWindow):
                           ("Streamlines", "stream"),
                           ("Find Equilibria", "equil")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_de_phase(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
 
@@ -3561,10 +3542,9 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._de_ph_fig = Figure(facecolor='#1e222b')
-        self._de_ph_canvas = FigureCanvas(self._de_ph_fig)
+        self._de_ph_fig, self._de_ph_canvas = self._make_figure()
         rl.addWidget(self._de_ph_canvas, 1)
-        self._de_output(rl, '_de_ph_out', 90)
+        self._make_output(rl, '_de_ph_out', 90)
         outer.addWidget(right, 3)
 
     def _de_eval_field(self, expr_str, X, Y):
@@ -3576,7 +3556,7 @@ class Karhulaattori(QMainWindow):
         return np.asarray(eval(expr_str.strip(), ns), dtype=float)
 
     def _run_de_phase(self, mode):
-        from scipy.integrate import solve_ivp
+
         try:
             f_str = self._de_ph_f.text()
             g_str = self._de_ph_g.text()
@@ -3596,7 +3576,7 @@ class Karhulaattori(QMainWindow):
 
             self._de_ph_fig.clear()
             ax = self._de_ph_fig.add_subplot(111)
-            self._de_axes(ax)
+            self._style_axes(ax)
             ax.set_xlim(xmin, xmax); ax.set_ylim(ymin, ymax)
             ax.set_xlabel("x", color='#81a1c1', fontsize=8)
             ax.set_ylabel("y", color='#81a1c1', fontsize=8)
@@ -3641,7 +3621,7 @@ class Karhulaattori(QMainWindow):
 
             if mode == "equil":
                 # Find equilibria numerically on a grid
-                from scipy.optimize import fsolve
+
                 equil = []
                 for x0 in np.linspace(xmin, xmax, 6):
                     for y0 in np.linspace(ymin, ymax, 6):
@@ -3677,7 +3657,7 @@ class Karhulaattori(QMainWindow):
             self._de_ph_canvas.draw()
             self._add_to_global_history("DE·Phase", mode, f"{f_str}, {g_str}", "")
         except Exception as e:
-            self._de_ph_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._de_ph_out.setHtml(self._err_html(e))
 
     # ── PDE ───────────────────────────────────────────────────────────────
 
@@ -3704,8 +3684,7 @@ class Karhulaattori(QMainWindow):
             "Laplace  uₓₓ + uyy = 0",
         ])
         self._de_pde_type.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         g.addWidget(self._de_pde_type, 0, 1)
 
@@ -3718,18 +3697,18 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._de_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
         g.addWidget(QLabel("Initial cond. u(x,0) ="), 6, 0)
         self._de_pde_ic = QLineEdit("sin(pi*x/L)")
-        self._de_pde_ic.setStyleSheet(self._de_field)
+        self._de_pde_ic.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_pde_ic, 6, 1)
 
         g.addWidget(QLabel("Snapshots at t ="), 7, 0)
         self._de_pde_snaps = QLineEdit("0, 0.1, 0.3, 0.6, 1.0")
-        self._de_pde_snaps.setStyleSheet(self._de_field)
+        self._de_pde_snaps.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self._de_pde_snaps, 7, 1)
 
         presets_pde = [
@@ -3741,7 +3720,7 @@ class Karhulaattori(QMainWindow):
         pg = QGridLayout()
         for idx, (lbl, ptype, alpha, L, T, Nx, Nt, ic, snaps) in enumerate(presets_pde):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._de_btn.replace("min-height: 34px","min-height:26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             def _load(pt=ptype, a=alpha, lv=L, tv=T, nx=Nx, nt=Nt, icv=ic, sv=snaps):
                 self._de_pde_type.setCurrentText(pt)
                 if a: self._de_pde_alpha.setText(a)
@@ -3756,7 +3735,7 @@ class Karhulaattori(QMainWindow):
         g.addLayout(pg, g.rowCount(), 0, 1, 2)
 
         solve_btn = QPushButton("Solve PDE")
-        solve_btn.setStyleSheet(self._de_btn)
+        solve_btn.setStyleSheet(self._BTN_STYLE)
         solve_btn.clicked.connect(self._run_de_pde)
         g.addWidget(solve_btn, g.rowCount(), 0, 1, 2)
         ll.addWidget(grp)
@@ -3766,10 +3745,9 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self._de_pde_fig = Figure(facecolor='#1e222b')
-        self._de_pde_canvas = FigureCanvas(self._de_pde_fig)
+        self._de_pde_fig, self._de_pde_canvas = self._make_figure()
         rl.addWidget(self._de_pde_canvas, 1)
-        self._de_output(rl, '_de_pde_out', 70)
+        self._make_output(rl, '_de_pde_out', 70)
         outer.addWidget(right, 3)
 
     def _run_de_pde(self):
@@ -3817,7 +3795,7 @@ class Karhulaattori(QMainWindow):
                             snapshots[ts] = u.copy()
 
                 ax = self._de_pde_fig.add_subplot(111)
-                self._de_axes(ax)
+                self._style_axes(ax)
                 cmap = matplotlib.cm.get_cmap('cool')
                 times_sorted = sorted(snapshots.keys())
                 for i, t_s in enumerate(times_sorted):
@@ -3857,7 +3835,7 @@ class Karhulaattori(QMainWindow):
                             snapshots[ts] = u_cur.copy()
 
                 ax = self._de_pde_fig.add_subplot(111)
-                self._de_axes(ax)
+                self._style_axes(ax)
                 cmap = matplotlib.cm.get_cmap('cool')
                 times_sorted = sorted(snapshots.keys())
                 for i, t_s in enumerate(times_sorted):
@@ -3902,7 +3880,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("DE·PDE", ptype.split()[0], ic_str, "solved")
 
         except Exception as e:
-            self._de_pde_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._de_pde_out.setHtml(self._err_html(e))
 
     def setup_statistics_tab(self):
         stat_widget = QWidget()
@@ -4040,8 +4018,7 @@ class Karhulaattori(QMainWindow):
 
         plot_grp = QGroupBox("Plot")
         pg = QVBoxLayout(plot_grp)
-        self.stat_fig = Figure(facecolor='#1e222b')
-        self.stat_canvas = FigureCanvas(self.stat_fig)
+        self.stat_fig, self.stat_canvas = self._make_figure()
         self.stat_ax = self.stat_fig.subplots()
         self._init_stat_axes()
         pg.addWidget(self.stat_canvas)
@@ -4058,11 +4035,7 @@ class Karhulaattori(QMainWindow):
 
     def _init_stat_axes(self):
         ax = self.stat_ax
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4')
-        for spine in ax.spines.values():
-            spine.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.7)
+        self._style_axes(ax)
         self.stat_fig.tight_layout(pad=1.2)
         self.stat_canvas.draw()
 
@@ -4074,27 +4047,27 @@ class Karhulaattori(QMainWindow):
         return np.array([float(t) for t in tokens])
 
     def _get_dist(self):
-        from scipy import stats
+
         name = self.stat_dist_combo.currentText()
         p1 = float(self.stat_p1.text())
         p2_text = self.stat_p2.text().strip()
         p2 = float(p2_text) if p2_text else 1.0
         if name == "Normal":
-            return stats.norm(loc=p1, scale=p2), f"N({p1}, {p2}²)"
+            return _stats.norm(loc=p1, scale=p2), f"N({p1}, {p2}²)"
         elif name == "Binomial":
-            return stats.binom(n=int(p1), p=p2), f"Bin({int(p1)}, {p2})"
+            return _stats.binom(n=int(p1), p=p2), f"Bin({int(p1)}, {p2})"
         elif name == "Poisson":
-            return stats.poisson(mu=p1), f"Poisson({p1})"
+            return _stats.poisson(mu=p1), f"Poisson({p1})"
         elif name == "t-distribution":
-            return stats.t(df=p1), f"t({p1} df)"
+            return _stats.t(df=p1), f"t({p1} df)"
         elif name == "Chi-squared":
-            return stats.chi2(df=p1), f"χ²({p1} df)"
+            return _stats.chi2(df=p1), f"χ²({p1} df)"
         elif name == "Exponential":
-            return stats.expon(scale=1.0 / p1), f"Exp(λ={p1})"
+            return _stats.expon(scale=1.0 / p1), f"Exp(λ={p1})"
         raise ValueError(f"Unknown distribution: {name}")
 
     def execute_stat_op(self, action):
-        from scipy import stats as sp
+
         _stat_input = self.stat_data_input.toPlainText().strip()[:60]
         try:
             if action in ("all_stats", "histogram", "boxplot", "mean", "median", "mode",
@@ -4173,7 +4146,7 @@ class Karhulaattori(QMainWindow):
                 self.stat_output.setHtml(text_map[action])
 
             elif action in ("factorial", "ncr", "npr"):
-                import math
+
                 n = int(float(self.stat_n.text()))
                 r = int(float(self.stat_r.text()))
                 if action == "factorial":
@@ -4262,7 +4235,7 @@ class Karhulaattori(QMainWindow):
                     self._add_to_global_history("Statistics", action, _stat_input, result_text)
 
         except Exception as e:
-            self.stat_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.stat_output.setHtml(self._err_html(e))
 
 
     def setup_3d_graphing_tab(self):
@@ -4328,8 +4301,7 @@ class Karhulaattori(QMainWindow):
         self.g3d_res = QComboBox()
         self.g3d_res.addItems(["50  (fast)", "75", "100  (detailed)"])
         self.g3d_res.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         rg.addWidget(self.g3d_res, 3, 1, 1, 3)
         left_layout.addWidget(rng_grp)
@@ -4341,8 +4313,7 @@ class Karhulaattori(QMainWindow):
         self.g3d_cmap = QComboBox()
         self.g3d_cmap.addItems(["viridis", "plasma", "coolwarm", "ocean", "magma", "inferno", "twilight", "RdBu"])
         self.g3d_cmap.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         cg.addWidget(self.g3d_cmap)
         left_layout.addWidget(cmap_grp)
@@ -4423,8 +4394,7 @@ class Karhulaattori(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
 
-        self.g3d_fig = Figure(facecolor='#1e222b')
-        self.g3d_canvas = FigureCanvas(self.g3d_fig)
+        self.g3d_fig, self.g3d_canvas = self._make_figure()
         self.g3d_ax = self.g3d_fig.add_subplot(111, projection='3d')
         self._init_3d_axes()
         right_layout.addWidget(self.g3d_canvas, 1)
@@ -4616,7 +4586,7 @@ class Karhulaattori(QMainWindow):
             )
 
         except Exception as e:
-            self.g3d_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.g3d_output.setHtml(self._err_html(e))
 
 
     def setup_number_theory_tab(self):
@@ -4725,8 +4695,7 @@ class Karhulaattori(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(8)
 
-        self.nt_fig = Figure(facecolor='#1e222b')
-        self.nt_canvas = FigureCanvas(self.nt_fig)
+        self.nt_fig, self.nt_canvas = self._make_figure()
         self.nt_canvas.setMaximumHeight(200)
         self.nt_ax = self.nt_fig.subplots()
         self._init_nt_axes()
@@ -4745,21 +4714,17 @@ class Karhulaattori(QMainWindow):
 
     def _init_nt_axes(self):
         ax = self.nt_ax
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for spine in ax.spines.values():
-            spine.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.7)
+        self._style_axes(ax)
         self.nt_fig.tight_layout(pad=0.8)
         self.nt_canvas.draw()
 
     def execute_nt_op(self, action):
-        import re as _re
-        import math
+
+
 
         def _out(html):
             self.nt_output.setHtml(html)
-            plain = _re.sub(r'<[^>]+>', '', html).strip()
+            plain = re.sub(r'<[^>]+>', '', html).strip()
             self._add_to_global_history("Number Theory", action,
                                         f"n={self.nt_n.text()} a={self.nt_a.text()} b={self.nt_b.text()}",
                                         plain[:200])
@@ -4977,12 +4942,12 @@ class Karhulaattori(QMainWindow):
                     _out(f"<b>Primes ≤ {limit:,}:  {len(primes):,} found</b><br><br>"
                          f"{preview}{suffix}")
                 else:
-                    import math as _math
+
                     _out(f"<b>π({limit:,}) = {len(primes):,}</b><br>"
-                         f"x/ln(x) ≈ {limit / _math.log(limit):.1f}")
+                         f"x/ln(x) ≈ {limit / math.log(limit):.1f}")
 
         except Exception as e:
-            self.nt_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {str(e)}")
+            self.nt_output.setHtml(self._err_html(e))
 
     # ══════════════════════════════════════════════════════════════════════
     # Analysis tab  (Fourier · Special Functions · Complex Mapping · FA)
@@ -4995,15 +4960,6 @@ class Karhulaattori(QMainWindow):
         outer.setContentsMargins(4, 4, 4, 4)
         self._an_tabs = QTabWidget()
         outer.addWidget(self._an_tabs)
-        self._an_field = (
-            "background-color: #242933; border: 1px solid #3b4252; "
-            "border-radius: 8px; color: #eceff4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
-        )
-        self._an_btn = (
-            "font-size: 12px; font-weight: bold; "
-            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
-        )
         self._setup_fourier_subtab()
         self._setup_special_functions_subtab()
         self._setup_complex_mapping_subtab()
@@ -5028,19 +4984,19 @@ class Karhulaattori(QMainWindow):
         fsg.setSpacing(6)
         fsg.addWidget(QLabel("f(x) ="), 0, 0)
         self.fs_expr = QLineEdit("x")
-        self.fs_expr.setStyleSheet(self._an_field)
+        self.fs_expr.setStyleSheet(self._FIELD_STYLE)
         fsg.addWidget(self.fs_expr, 0, 1)
         fsg.addWidget(QLabel("L ="), 1, 0)
         self.fs_L = QLineEdit("pi")
-        self.fs_L.setStyleSheet(self._an_field)
+        self.fs_L.setStyleSheet(self._FIELD_STYLE)
         fsg.addWidget(self.fs_L, 1, 1)
         fsg.addWidget(QLabel("Terms N ="), 2, 0)
         self.fs_N = QLineEdit("8")
-        self.fs_N.setStyleSheet(self._an_field)
+        self.fs_N.setStyleSheet(self._FIELD_STYLE)
         fsg.addWidget(self.fs_N, 2, 1)
         for lbl, act in [("Plot Approximation", "series"), ("Show Coefficients", "coeffs")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._an_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_fourier(a))
             fsg.addWidget(btn, fsg.rowCount(), 0, 1, 2)
         ll.addWidget(fs)
@@ -5063,12 +5019,12 @@ class Karhulaattori(QMainWindow):
         sr_row.addWidget(QLabel("Sample rate (Hz):"))
         self.fft_sr = QLineEdit("1")
         self.fft_sr.setFixedWidth(70)
-        self.fft_sr.setStyleSheet(self._an_field)
+        self.fft_sr.setStyleSheet(self._FIELD_STYLE)
         sr_row.addWidget(self.fft_sr)
         sr_row.addStretch()
         fftg.addLayout(sr_row)
         fft_btn = QPushButton("Compute FFT & Plot Spectrum")
-        fft_btn.setStyleSheet(self._an_btn)
+        fft_btn.setStyleSheet(self._BTN_STYLE)
         fft_btn.clicked.connect(lambda: self._run_fourier("fft"))
         fftg.addWidget(fft_btn)
         ll.addWidget(fft)
@@ -5078,8 +5034,7 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.fourier_fig = Figure(facecolor='#1e222b')
-        self.fourier_canvas = FigureCanvas(self.fourier_fig)
+        self.fourier_fig, self.fourier_canvas = self._make_figure()
         rl.addWidget(self.fourier_canvas, 1)
         self.fourier_output = QTextBrowser()
         self.fourier_output.setMaximumHeight(90)
@@ -5091,7 +5046,7 @@ class Karhulaattori(QMainWindow):
         outer.addWidget(right, 3)
 
     def _run_fourier(self, action):
-        from scipy.integrate import quad as _quad
+
         try:
             if action in ("series", "coeffs"):
                 x_sym = sympy.Symbol('x')
@@ -5186,7 +5141,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("Analysis·Fourier", action,
                                         self.fs_expr.text(), self.fourier_output.toPlainText()[:150])
         except Exception as e:
-            self.fourier_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.fourier_output.setHtml(self._err_html(e))
 
     # ── Special Functions ──────────────────────────────────────────────────
 
@@ -5214,8 +5169,7 @@ class Karhulaattori(QMainWindow):
             "Lambert W(x)", "Beta  B(x,n)",
         ])
         self.sf_combo.setStyleSheet(
-            "background-color: #242933; color: #eceff4; border: 1px solid #3b4252; "
-            "border-radius: 6px; padding: 4px; font-size: 12px;"
+            self._COMBO_STYLE
         )
         sg.addWidget(self.sf_combo, 0, 1)
 
@@ -5227,13 +5181,13 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             sg.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._an_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             sg.addWidget(w, row, 1)
 
         for lbl, act in [("Evaluate at x", "eval"), ("Plot over range", "plot")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._an_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_sf(a))
             sg.addWidget(btn, sg.rowCount(), 0, 1, 2)
         ll.addWidget(sel_grp)
@@ -5247,8 +5201,7 @@ class Karhulaattori(QMainWindow):
         self.sf_result_latex = LatexCanvas(height=90)
         rl.addWidget(self.sf_result_latex)
         rl.addWidget(self._copy_latex_btn(self.sf_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
-        self.sf_fig = Figure(facecolor='#1e222b')
-        self.sf_canvas = FigureCanvas(self.sf_fig)
+        self.sf_fig, self.sf_canvas = self._make_figure()
         self.sf_ax = self.sf_fig.subplots()
         self._init_sf_axes()
         rl.addWidget(self.sf_canvas, 1)
@@ -5256,15 +5209,12 @@ class Karhulaattori(QMainWindow):
 
     def _init_sf_axes(self):
         ax = self.sf_ax
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        self._style_axes(ax)
         self.sf_fig.tight_layout(pad=0.8)
         self.sf_canvas.draw()
 
     def _run_sf(self, action):
-        from scipy import special as sc
+
         import warnings
         try:
             name = self.sf_combo.currentText()
@@ -5367,7 +5317,7 @@ class Karhulaattori(QMainWindow):
         fg.addWidget(hint, 0, 0, 1, 2)
         fg.addWidget(QLabel("f(z) ="), 1, 0)
         self.cm_expr = QLineEdit("z**2")
-        self.cm_expr.setStyleSheet(self._an_field)
+        self.cm_expr.setStyleSheet(self._FIELD_STYLE)
         fg.addWidget(self.cm_expr, 1, 1)
 
         for row, (lbl, attr, default) in enumerate([
@@ -5377,7 +5327,7 @@ class Karhulaattori(QMainWindow):
             fg.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
             w.setFixedWidth(64)
-            w.setStyleSheet(self._an_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             fg.addWidget(w, row, 1)
 
@@ -5401,7 +5351,7 @@ class Karhulaattori(QMainWindow):
             ("Modulus Surface",   "modulus"),
         ]):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._an_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_complex_map(a))
             vg.addWidget(btn, idx // 2, idx % 2)
         ll.addWidget(viz_grp)
@@ -5411,8 +5361,7 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.cm_fig = Figure(facecolor='#1e222b')
-        self.cm_canvas = FigureCanvas(self.cm_fig)
+        self.cm_fig, self.cm_canvas = self._make_figure()
         rl.addWidget(self.cm_canvas, 1)
         self.cm_output = QTextBrowser()
         self.cm_output.setMaximumHeight(36)
@@ -5527,7 +5476,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("Analysis·Complex", viz, f"f(z)={self.cm_expr.text()}", viz)
 
         except Exception as e:
-            self.cm_output.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.cm_output.setHtml(self._err_html(e))
 
     # ── Functional Analysis ────────────────────────────────────────────────
 
@@ -5554,7 +5503,7 @@ class Karhulaattori(QMainWindow):
         ]):
             fg.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._an_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             fg.addWidget(w, row, 1)
         ll.addWidget(fn_grp)
@@ -5572,7 +5521,7 @@ class Karhulaattori(QMainWindow):
         ]
         for idx, (lbl, act) in enumerate(fa_ops):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._an_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_fa(a))
             og.addWidget(btn, idx // 2, idx % 2)
         ll.addWidget(ops_grp)
@@ -5586,8 +5535,7 @@ class Karhulaattori(QMainWindow):
         self.fa_result_latex = LatexCanvas(height=90)
         rl.addWidget(self.fa_result_latex)
         rl.addWidget(self._copy_latex_btn(self.fa_result_latex), alignment=Qt.AlignmentFlag.AlignRight)
-        self.fa_fig = Figure(facecolor='#1e222b')
-        self.fa_canvas = FigureCanvas(self.fa_fig)
+        self.fa_fig, self.fa_canvas = self._make_figure()
         self.fa_ax = self.fa_fig.subplots()
         self._init_fa_axes()
         rl.addWidget(self.fa_canvas, 1)
@@ -5595,15 +5543,12 @@ class Karhulaattori(QMainWindow):
 
     def _init_fa_axes(self):
         ax = self.fa_ax
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for sp in ax.spines.values(): sp.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
+        self._style_axes(ax)
         self.fa_fig.tight_layout(pad=0.8)
         self.fa_canvas.draw()
 
     def _run_fa(self, action):
-        from scipy.integrate import quad as _quad
+
         try:
             x_sym = sympy.Symbol('x')
             f_expr = sympy.sympify(self.fa_f.text())
@@ -5760,40 +5705,10 @@ class Karhulaattori(QMainWindow):
         outer.setContentsMargins(4, 4, 4, 4)
         self._nm_tabs = QTabWidget()
         outer.addWidget(self._nm_tabs)
-        _f = (
-            "background-color: #242933; border: 1px solid #3b4252; "
-            "border-radius: 8px; color: #eceff4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
-        )
-        _b = (
-            "font-size: 12px; font-weight: bold; "
-            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
-        )
-        self._nm_field = _f
-        self._nm_btn   = _b
         self._setup_nm_roots()
         self._setup_nm_integration()
         self._setup_nm_interpolation()
         self._setup_nm_fitting()
-
-    # ── helpers ────────────────────────────────────────────────────────────
-
-    def _nm_axes(self, ax):
-        ax.set_facecolor('#242933')
-        ax.tick_params(colors='#eceff4', labelsize=8)
-        for sp in ax.spines.values():
-            sp.set_edgecolor('#3b4252')
-        ax.grid(color='#2e3440', linestyle='--', linewidth=0.6)
-
-    def _nm_output(self, parent_layout, attr_name, max_h=100):
-        tb = QTextBrowser()
-        tb.setMaximumHeight(max_h)
-        tb.setStyleSheet(
-            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
-            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
-        )
-        setattr(self, attr_name, tb)
-        parent_layout.addWidget(tb)
 
     # ── Root Finding ───────────────────────────────────────────────────────
 
@@ -5813,7 +5728,7 @@ class Karhulaattori(QMainWindow):
         g.setSpacing(6)
         g.addWidget(QLabel("f(x) ="), 0, 0)
         self.nm_rf_f = QLineEdit("x**3 - x - 2")
-        self.nm_rf_f.setStyleSheet(self._nm_field)
+        self.nm_rf_f.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self.nm_rf_f, 0, 1)
 
         params = [
@@ -5826,7 +5741,7 @@ class Karhulaattori(QMainWindow):
         for row, (lbl, attr, default) in enumerate(params, start=1):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._nm_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
@@ -5839,7 +5754,7 @@ class Karhulaattori(QMainWindow):
         ]
         for lbl, act in methods:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._nm_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_rf(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
         ll.addWidget(grp)
@@ -5849,10 +5764,9 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.nm_rf_fig = Figure(facecolor='#1e222b')
-        self.nm_rf_canvas = FigureCanvas(self.nm_rf_fig)
+        self.nm_rf_fig, self.nm_rf_canvas = self._make_figure()
         rl.addWidget(self.nm_rf_canvas, 1)
-        self._nm_output(rl, "nm_rf_out", 110)
+        self._make_output(rl, "nm_rf_out", 110)
         outer.addWidget(right, 3)
 
     def _run_rf(self, method):
@@ -5933,7 +5847,7 @@ class Karhulaattori(QMainWindow):
                     root = c
 
             elif method == "brent":
-                from scipy.optimize import brentq
+
                 root = brentq(f_num, a, b, xtol=tol, maxiter=maxn,
                               full_output=False)
                 history = [(1, root, f_num(root))]
@@ -5947,7 +5861,7 @@ class Karhulaattori(QMainWindow):
 
             self.nm_rf_fig.clear()
             ax = self.nm_rf_fig.add_subplot(111)
-            self._nm_axes(ax)
+            self._style_axes(ax)
             ax.plot(xs, ys, color='#88c0d0', linewidth=2, label='f(x)')
             ax.axhline(0, color='#4c566a', linewidth=0.8)
             if root is not None:
@@ -5974,7 +5888,7 @@ class Karhulaattori(QMainWindow):
                                         self.nm_rf_f.text(), f"root≈{root_str}")
 
         except Exception as e:
-            self.nm_rf_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.nm_rf_out.setHtml(self._err_html(e))
 
     # ── Numerical Integration ──────────────────────────────────────────────
 
@@ -5994,7 +5908,7 @@ class Karhulaattori(QMainWindow):
         g.setSpacing(6)
         g.addWidget(QLabel("f(x) ="), 0, 0)
         self.nm_int_f = QLineEdit("sin(x)**2")
-        self.nm_int_f.setStyleSheet(self._nm_field)
+        self.nm_int_f.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self.nm_int_f, 0, 1)
 
         for row, (lbl, attr, default) in enumerate([
@@ -6004,7 +5918,7 @@ class Karhulaattori(QMainWindow):
         ], start=1):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._nm_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
 
@@ -6017,7 +5931,7 @@ class Karhulaattori(QMainWindow):
         ]
         for lbl, act in methods:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._nm_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_nm_int(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
         ll.addWidget(grp)
@@ -6027,14 +5941,13 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.nm_int_fig = Figure(facecolor='#1e222b')
-        self.nm_int_canvas = FigureCanvas(self.nm_int_fig)
+        self.nm_int_fig, self.nm_int_canvas = self._make_figure()
         rl.addWidget(self.nm_int_canvas, 1)
-        self._nm_output(rl, "nm_int_out", 110)
+        self._make_output(rl, "nm_int_out", 110)
         outer.addWidget(right, 3)
 
     def _run_nm_int(self, method):
-        from scipy.integrate import quad as _quad, fixed_quad
+
         try:
             x_sym = sympy.Symbol('x')
             f_expr = sympy.sympify(self.nm_int_f.text())
@@ -6089,7 +6002,7 @@ class Karhulaattori(QMainWindow):
 
             self.nm_int_fig.clear()
             ax = self.nm_int_fig.add_subplot(111)
-            self._nm_axes(ax)
+            self._style_axes(ax)
             ax.plot(xs_plot, ys_plot, color='#88c0d0', linewidth=2, label='f(x)')
             ax.fill_between(xs_plot, ys_plot, alpha=0.18, color='#a3be8c')
             ax.axhline(0, color='#4c566a', linewidth=0.6)
@@ -6120,7 +6033,7 @@ class Karhulaattori(QMainWindow):
                                         self.nm_int_f.text(), f"{primary_val:.8g}")
 
         except Exception as e:
-            self.nm_int_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.nm_int_out.setHtml(self._err_html(e))
 
     # ── Interpolation ──────────────────────────────────────────────────────
 
@@ -6161,7 +6074,7 @@ class Karhulaattori(QMainWindow):
 
         g.addWidget(QLabel("Eval at x ="), 4, 0)
         self.nm_ip_eval = QLineEdit("2.5")
-        self.nm_ip_eval.setStyleSheet(self._nm_field)
+        self.nm_ip_eval.setStyleSheet(self._FIELD_STYLE)
         g.addWidget(self.nm_ip_eval, 4, 1)
 
         methods = [
@@ -6172,7 +6085,7 @@ class Karhulaattori(QMainWindow):
         ]
         for lbl, act in methods:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._nm_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_nm_interp(a))
             g.addWidget(btn, g.rowCount(), 0, 1, 2)
         ll.addWidget(grp)
@@ -6182,14 +6095,13 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.nm_ip_fig = Figure(facecolor='#1e222b')
-        self.nm_ip_canvas = FigureCanvas(self.nm_ip_fig)
+        self.nm_ip_fig, self.nm_ip_canvas = self._make_figure()
         rl.addWidget(self.nm_ip_canvas, 1)
-        self._nm_output(rl, "nm_ip_out", 90)
+        self._make_output(rl, "nm_ip_out", 90)
         outer.addWidget(right, 3)
 
     def _run_nm_interp(self, method):
-        from scipy.interpolate import CubicSpline, interp1d
+
         try:
             def _parse(text):
                 return np.array([float(v) for v in text.replace(',', ' ').split()])
@@ -6251,7 +6163,7 @@ class Karhulaattori(QMainWindow):
 
             self.nm_ip_fig.clear()
             ax = self.nm_ip_fig.add_subplot(111)
-            self._nm_axes(ax)
+            self._style_axes(ax)
             ax.scatter(xs, ys, color='#ebcb8b', s=50, zorder=5, label='data')
             ax.plot(x_plot, y_plot, color='#88c0d0', linewidth=2,
                     label=method.replace('_', ' '))
@@ -6272,7 +6184,7 @@ class Karhulaattori(QMainWindow):
                                         f"n={len(xs)}", f"f({xe})≈{y_eval:.6g}")
 
         except Exception as e:
-            self.nm_ip_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.nm_ip_out.setHtml(self._err_html(e))
 
     # ── Curve Fitting ──────────────────────────────────────────────────────
 
@@ -6314,12 +6226,12 @@ class Karhulaattori(QMainWindow):
         mg.addWidget(QLabel("Polynomial degree:"), 0, 0)
         self.nm_fit_deg = QLineEdit("2")
         self.nm_fit_deg.setFixedWidth(50)
-        self.nm_fit_deg.setStyleSheet(self._nm_field)
+        self.nm_fit_deg.setStyleSheet(self._FIELD_STYLE)
         mg.addWidget(self.nm_fit_deg, 0, 1)
 
         mg.addWidget(QLabel("Custom f(x, …):"), 1, 0)
         self.nm_fit_custom = QLineEdit("a * exp(-b * x) + c")
-        self.nm_fit_custom.setStyleSheet(self._nm_field)
+        self.nm_fit_custom.setStyleSheet(self._FIELD_STYLE)
         mg.addWidget(self.nm_fit_custom, 1, 1)
 
         hint3 = QLabel("Parameters are any letters in the expression except x")
@@ -6336,7 +6248,7 @@ class Karhulaattori(QMainWindow):
         ]
         for lbl, act in fitting_methods:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._nm_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_nm_fit(a))
             mg.addWidget(btn, mg.rowCount(), 0, 1, 2)
         ll.addWidget(model_grp)
@@ -6346,15 +6258,14 @@ class Karhulaattori(QMainWindow):
         right = QWidget()
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        self.nm_fit_fig = Figure(facecolor='#1e222b')
-        self.nm_fit_canvas = FigureCanvas(self.nm_fit_fig)
+        self.nm_fit_fig, self.nm_fit_canvas = self._make_figure()
         rl.addWidget(self.nm_fit_canvas, 1)
-        self._nm_output(rl, "nm_fit_out", 120)
+        self._make_output(rl, "nm_fit_out", 120)
         outer.addWidget(right, 3)
 
     def _run_nm_fit(self, method):
-        from scipy.optimize import curve_fit
-        import re
+
+
         try:
             def _parse(text):
                 return np.array([float(v) for v in text.replace(',', ' ').split()])
@@ -6365,7 +6276,7 @@ class Karhulaattori(QMainWindow):
 
             self.nm_fit_fig.clear()
             ax = self.nm_fit_fig.add_subplot(111)
-            self._nm_axes(ax)
+            self._style_axes(ax)
             ax.scatter(xs, ys, color='#ebcb8b', s=50, zorder=5, label='data')
 
             label = method
@@ -6447,31 +6358,20 @@ class Karhulaattori(QMainWindow):
                                         f"n={len(xs)}", r2_str)
 
         except Exception as e:
-            self.nm_fit_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self.nm_fit_out.setHtml(self._err_html(e))
 
     # ══════════════════════════════════════════════════════════════════════
     # Graph Theory tab
     # ══════════════════════════════════════════════════════════════════════
 
     def setup_graph_theory_tab(self):
-        import networkx as nx
-        self._nx = nx
         w = QWidget()
         self.tabs.addTab(w, "Graph Theory")
         outer = QVBoxLayout(w)
         outer.setContentsMargins(4, 4, 4, 4)
         self._gt_tabs = QTabWidget()
         outer.addWidget(self._gt_tabs)
-        self._gt_field = (
-            "background-color: #242933; border: 1px solid #3b4252; "
-            "border-radius: 8px; color: #eceff4; "
-            "font-family: 'Consolas', monospace; font-size: 13px; padding: 5px;"
-        )
-        self._gt_btn = (
-            "font-size: 12px; font-weight: bold; "
-            "background-color: #2f384c; color: #a3be8c; min-height: 34px;"
-        )
-        self._gt_graph = None   # current nx graph
+        self._gt_graph = None
         self._setup_gt_editor()
         self._setup_gt_algorithms()
         self._setup_gt_mst_color()
@@ -6481,7 +6381,7 @@ class Karhulaattori(QMainWindow):
 
     def _gt_parse_graph(self):
         """Parse edge list from _gt_edges QTextEdit → nx.Graph / nx.DiGraph."""
-        nx = self._nx
+
         directed = self._gt_directed.isChecked()
         weighted = self._gt_weighted.isChecked()
         G = nx.DiGraph() if directed else nx.Graph()
@@ -6499,7 +6399,7 @@ class Karhulaattori(QMainWindow):
 
     def _gt_draw(self, ax, G, node_colors=None, edge_colors=None,
                  labels=None, highlight_edges=None, title=""):
-        nx = self._nx
+
         layout_name = self._gt_layout.currentText()
         layouts = {
             "Spring":    nx.spring_layout,
@@ -6544,15 +6444,6 @@ class Karhulaattori(QMainWindow):
         if title:
             ax.set_title(title, color='#eceff4', fontsize=9, pad=4)
 
-    def _gt_output(self, layout, attr, max_h=120):
-        tb = QTextBrowser()
-        tb.setMaximumHeight(max_h)
-        tb.setStyleSheet(
-            "background-color: #1e222b; border: 1px solid #2e3440; border-radius: 6px; "
-            "color: #a3be8c; font-family: 'Consolas', monospace; font-size: 12px; padding: 6px;"
-        )
-        setattr(self, attr, tb)
-        layout.addWidget(tb)
 
     # ── Graph Editor ───────────────────────────────────────────────────────
 
@@ -6616,13 +6507,13 @@ class Karhulaattori(QMainWindow):
         }
         for idx, (label, edges) in enumerate(presets.items()):
             btn = QPushButton(label)
-            btn.setStyleSheet(self._gt_btn.replace("min-height: 34px","min-height:26px"))
+            btn.setStyleSheet(self._BTN_STYLE_SM)
             btn.clicked.connect(lambda _, e=edges: self._gt_edges.setPlainText(e))
             pg.addWidget(btn, idx // 3, idx % 3)
         ll.addWidget(preset_grp)
 
         draw_btn = QPushButton("Draw Graph")
-        draw_btn.setStyleSheet(self._gt_btn)
+        draw_btn.setStyleSheet(self._BTN_STYLE)
         draw_btn.clicked.connect(self._run_gt_draw)
         ll.addWidget(draw_btn)
         ll.addStretch()
@@ -6634,14 +6525,14 @@ class Karhulaattori(QMainWindow):
         self._gt_fig = Figure(facecolor='#1a1e27')
         self._gt_canvas = FigureCanvas(self._gt_fig)
         rl.addWidget(self._gt_canvas, 1)
-        self._gt_output(rl, '_gt_draw_out', 90)
+        self._make_output(rl, '_gt_draw_out', 90)
         outer.addWidget(right, 3)
 
     def _run_gt_draw(self):
         try:
             G = self._gt_parse_graph()
             self._gt_graph = G
-            nx = self._nx
+    
             self._gt_fig.clear()
             ax = self._gt_fig.add_subplot(111)
             self._gt_draw(ax, G, title=f"Graph  —  {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
@@ -6650,17 +6541,18 @@ class Karhulaattori(QMainWindow):
 
             deg = dict(G.degree())
             deg_seq = sorted(deg.values(), reverse=True)
+            density = nx.density(G)
             self._gt_draw_out.setHtml(
                 f"<b>Nodes:</b> {G.number_of_nodes()}  "
                 f"<b>Edges:</b> {G.number_of_edges()}<br>"
                 f"<b>Degree sequence:</b> {deg_seq}<br>"
-                f"<b>Density:</b> {nx.density(G):.4g}"
+                f"<b>Density:</b> {density:.4g}"
             )
             self._add_to_global_history("GraphTheory", "draw",
                                         f"{G.number_of_nodes()}n,{G.number_of_edges()}e",
-                                        f"density={nx.density(G):.4g}")
+                                        f"density={density:.4g}")
         except Exception as e:
-            self._gt_draw_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._gt_draw_out.setHtml(self._err_html(e))
 
     # ── Algorithms ─────────────────────────────────────────────────────────
 
@@ -6684,7 +6576,7 @@ class Karhulaattori(QMainWindow):
         ]):
             g.addWidget(QLabel(lbl), row, 0)
             w = QLineEdit(default)
-            w.setStyleSheet(self._gt_field)
+            w.setStyleSheet(self._FIELD_STYLE)
             setattr(self, attr, w)
             g.addWidget(w, row, 1)
         ll.addWidget(grp)
@@ -6702,7 +6594,7 @@ class Karhulaattori(QMainWindow):
         ]
         for idx, (lbl, act) in enumerate(algos):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._gt_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_gt_algo(a))
             ag.addWidget(btn, idx // 2, idx % 2)
         ll.addWidget(algo_grp)
@@ -6715,15 +6607,13 @@ class Karhulaattori(QMainWindow):
         self._gt_algo_fig = Figure(facecolor='#1a1e27')
         self._gt_algo_canvas = FigureCanvas(self._gt_algo_fig)
         rl.addWidget(self._gt_algo_canvas, 1)
-        self._gt_output(rl, '_gt_algo_out', 130)
+        self._make_output(rl, '_gt_algo_out', 130)
         outer.addWidget(right, 3)
 
     def _run_gt_algo(self, algo):
         try:
-            if self._gt_graph is None:
-                self._gt_graph = self._gt_parse_graph()
-            G = self._gt_graph
-            nx = self._nx
+            G = self._gt_get_graph()
+    
             src = self._gt_src.text().strip()
             tgt = self._gt_tgt.text().strip()
 
@@ -6732,20 +6622,22 @@ class Karhulaattori(QMainWindow):
             result_html = ""
 
             if algo == "bfs":
-                order = list(nx.bfs_tree(G, src).nodes())
+                _tree = nx.bfs_tree(G, src)
+                order = list(_tree.nodes())
+                highlight = list(_tree.edges())
                 for i, n in enumerate(order):
                     node_colors[n] = f"#{min(0x5e+i*20,0xff):02x}81ac"
                 result_html = (f"<b>BFS from {src}:</b><br>"
                                + " → ".join(order))
-                highlight = list(nx.bfs_tree(G, src).edges())
 
             elif algo == "dfs":
-                order = list(nx.dfs_tree(G, src).nodes())
+                _tree = nx.dfs_tree(G, src)
+                order = list(_tree.nodes())
+                highlight = list(_tree.edges())
                 for i, n in enumerate(order):
                     node_colors[n] = f"#{min(0xa3+i*8,0xff):02x}be8c"
                 result_html = (f"<b>DFS from {src}:</b><br>"
                                + " → ".join(order))
-                highlight = list(nx.dfs_tree(G, src).edges())
 
             elif algo == "dijkstra":
                 length, path = nx.single_source_dijkstra(G, src, tgt,
@@ -6804,7 +6696,7 @@ class Karhulaattori(QMainWindow):
                                         result_html[:120].replace('<b>','').replace('</b>',''))
 
         except Exception as e:
-            self._gt_algo_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._gt_algo_out.setHtml(self._err_html(e))
 
     # ── MST & Coloring ──────────────────────────────────────────────────────
 
@@ -6825,7 +6717,7 @@ class Karhulaattori(QMainWindow):
         for lbl, act in [("Kruskal's MST", "kruskal"), ("Prim's MST", "prim"),
                           ("Maximum ST", "max_st")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._gt_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_gt_mst(a))
             mg.addWidget(btn, mg.rowCount(), 0, 1, 2)
         ll.addWidget(mst_grp)
@@ -6837,7 +6729,7 @@ class Karhulaattori(QMainWindow):
                           ("Largest-First", "largest_first"),
                           ("DSATUR heuristic", "dsatur")]:
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._gt_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_gt_color(a))
             cg.addWidget(btn, cg.rowCount(), 0, 1, 2)
         ll.addWidget(col_grp)
@@ -6850,15 +6742,13 @@ class Karhulaattori(QMainWindow):
         self._gt_mst_fig = Figure(facecolor='#1a1e27')
         self._gt_mst_canvas = FigureCanvas(self._gt_mst_fig)
         rl.addWidget(self._gt_mst_canvas, 1)
-        self._gt_output(rl, '_gt_mst_out', 110)
+        self._make_output(rl, '_gt_mst_out', 110)
         outer.addWidget(right, 3)
 
     def _run_gt_mst(self, method):
         try:
-            if self._gt_graph is None:
-                self._gt_graph = self._gt_parse_graph()
-            G = self._gt_graph
-            nx = self._nx
+            G = self._gt_get_graph()
+    
             UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
 
             if method == "max_st":
@@ -6888,14 +6778,12 @@ class Karhulaattori(QMainWindow):
             )
             self._add_to_global_history("GraphTheory", method, "", f"total_w={total_w:.4g}")
         except Exception as e:
-            self._gt_mst_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._gt_mst_out.setHtml(self._err_html(e))
 
     def _run_gt_color(self, strategy):
         try:
-            if self._gt_graph is None:
-                self._gt_graph = self._gt_parse_graph()
-            G = self._gt_graph
-            nx = self._nx
+            G = self._gt_get_graph()
+    
             UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
 
             strat_map = {
@@ -6927,7 +6815,7 @@ class Karhulaattori(QMainWindow):
             self._add_to_global_history("GraphTheory", f"coloring-{strategy}", "",
                                         f"χ≤{num_colors}")
         except Exception as e:
-            self._gt_mst_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._gt_mst_out.setHtml(self._err_html(e))
 
     # ── Properties ─────────────────────────────────────────────────────────
 
@@ -6957,7 +6845,7 @@ class Karhulaattori(QMainWindow):
         ]
         for idx, (lbl, act) in enumerate(props):
             btn = QPushButton(lbl)
-            btn.setStyleSheet(self._gt_btn)
+            btn.setStyleSheet(self._BTN_STYLE)
             btn.clicked.connect(lambda _, a=act: self._run_gt_props(a))
             pg.addWidget(btn, idx // 2, idx % 2)
         ll.addWidget(prop_grp)
@@ -6970,15 +6858,13 @@ class Karhulaattori(QMainWindow):
         self._gt_prop_fig = Figure(facecolor='#1a1e27')
         self._gt_prop_canvas = FigureCanvas(self._gt_prop_fig)
         rl.addWidget(self._gt_prop_canvas, 1)
-        self._gt_output(rl, '_gt_prop_out', 160)
+        self._make_output(rl, '_gt_prop_out', 160)
         outer.addWidget(right, 3)
 
     def _run_gt_props(self, prop):
         try:
-            if self._gt_graph is None:
-                self._gt_graph = self._gt_parse_graph()
-            G = self._gt_graph
-            nx = self._nx
+            G = self._gt_get_graph()
+    
             UG = G.to_undirected() if isinstance(G, nx.DiGraph) else G
 
             node_colors = ['#5e81ac'] * len(G.nodes)
@@ -6987,14 +6873,15 @@ class Karhulaattori(QMainWindow):
             if prop == "basic":
                 n, m = G.number_of_nodes(), G.number_of_edges()
                 directed = isinstance(G, nx.DiGraph)
+                connected = nx.is_connected(UG)
                 result_html = (
                     f"<b>Nodes:</b> {n}  <b>Edges:</b> {m}<br>"
                     f"<b>Directed:</b> {directed}<br>"
                     f"<b>Density:</b> {nx.density(G):.4g}<br>"
                     f"<b>Self-loops:</b> {nx.number_of_selfloops(G)}<br>"
-                    f"<b>Connected:</b> {nx.is_connected(UG)}<br>"
-                    + (f"<b>Diameter:</b> {nx.diameter(UG)}<br>" if nx.is_connected(UG) else "")
-                    + (f"<b>Radius:</b> {nx.radius(UG)}" if nx.is_connected(UG) else "")
+                    f"<b>Connected:</b> {connected}<br>"
+                    + (f"<b>Diameter:</b> {nx.diameter(UG)}<br>" if connected else "")
+                    + (f"<b>Radius:</b> {nx.radius(UG)}" if connected else "")
                 )
 
             elif prop == "degree":
@@ -7091,7 +6978,7 @@ class Karhulaattori(QMainWindow):
                                         result_html[:100].replace('<b>','').replace('</b>',''))
 
         except Exception as e:
-            self._gt_prop_out.setHtml(f"<b style='color:#bf616a'>Error:</b> {e}")
+            self._gt_prop_out.setHtml(self._err_html(e))
 
     def setup_history_tab(self):
         hist_widget = QWidget()
