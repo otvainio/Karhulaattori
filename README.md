@@ -94,30 +94,34 @@ A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, a
 - Filter by tab, search by keyword
 - Export to text file
 
+## Installation
+
+### Recommended — uv (installs everything in one command)
+
+```bash
+uv tool install git+https://github.com/otvainio/Karhulaattori.git
+karhulaattori
+```
+
+### pip from GitHub
+
+```bash
+pip install git+https://github.com/otvainio/Karhulaattori.git
+karhulaattori
+```
+
+### From source
+
+```bash
+git clone https://github.com/otvainio/Karhulaattori.git
+cd Karhulaattori
+pip install -e .
+karhulaattori
+```
+
 ## Requirements
 
-```
-Python >= 3.10
-PyQt6
-sympy
-numpy
-matplotlib
-scipy
-scikit-image
-networkx
-```
-
-Install dependencies:
-
-```bash
-pip install PyQt6 sympy numpy matplotlib scipy scikit-image networkx
-```
-
-## Running
-
-```bash
-python main.py
-```
+Python >= 3.10, all dependencies are declared in `pyproject.toml` and installed automatically.
 
 ## Input Syntax
 
