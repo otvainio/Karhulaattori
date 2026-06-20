@@ -37,3 +37,8 @@ ENV/
 .vscode/
 *.swp
 *.swo
+
+# Runtime files (not part of source)
+history.json
+history_export.txt
+err.txt
