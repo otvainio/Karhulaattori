@@ -98,6 +98,14 @@ A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, a
 
 ### Recommended — uv (installs everything in one command)
 
+If you don't have uv, install it with winget:
+
+```bash
+winget install --id astral-sh.uv -e
+```
+
+Then install and run Karhulaattori:
+
 ```bash
 uv tool install git+https://github.com/otvainio/Karhulaattori.git
 karhulaattori
