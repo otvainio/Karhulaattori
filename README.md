@@ -2,6 +2,41 @@
 
 A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, and Matplotlib. Features a Nordic dark theme and 13 specialized tabs covering everything from basic arithmetic to PDEs, graph theory, and complex analysis.
 
+## Installation
+
+### Recommended — uv (installs everything in one command)
+
+If you don't have uv, install it with winget:
+
+```bash
+winget install --id astral-sh.uv -e
+```
+
+Then install and run Karhulaattori:
+
+```bash
+uv tool install git+https://github.com/otvainio/Karhulaattori.git
+karhulaattori
+```
+
+### pip from GitHub
+
+```bash
+pip install git+https://github.com/otvainio/Karhulaattori.git
+karhulaattori
+```
+
+### From source
+
+```bash
+git clone https://github.com/otvainio/Karhulaattori.git
+cd Karhulaattori
+pip install -e .
+karhulaattori
+```
+
+Python >= 3.10, all dependencies are declared in `pyproject.toml` and installed automatically.
+
 ## Tabs
 
 ### Calculator
@@ -93,43 +128,6 @@ A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, a
 - Persistent cross-tab history (saved to `history.json`)
 - Filter by tab, search by keyword
 - Export to text file
-
-## Installation
-
-### Recommended — uv (installs everything in one command)
-
-If you don't have uv, install it with winget:
-
-```bash
-winget install --id astral-sh.uv -e
-```
-
-Then install and run Karhulaattori:
-
-```bash
-uv tool install git+https://github.com/otvainio/Karhulaattori.git
-karhulaattori
-```
-
-### pip from GitHub
-
-```bash
-pip install git+https://github.com/otvainio/Karhulaattori.git
-karhulaattori
-```
-
-### From source
-
-```bash
-git clone https://github.com/otvainio/Karhulaattori.git
-cd Karhulaattori
-pip install -e .
-karhulaattori
-```
-
-## Requirements
-
-Python >= 3.10, all dependencies are declared in `pyproject.toml` and installed automatically.
 
 ## Input Syntax
 
