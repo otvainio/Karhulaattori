@@ -3128,6 +3128,12 @@ class Karhulaattori(QMainWindow):
             self.calc_result_latex.render("")
 
     def _plot_calculus(self, action, expr, x, x0=None, a=None, b=None, n=None):
+        try:
+            self._plot_calculus_inner(action, expr, x, x0=x0, a=a, b=b, n=n)
+        except Exception:
+            self.calc_canvas.draw_idle()
+
+    def _plot_calculus_inner(self, action, expr, x, x0=None, a=None, b=None, n=None):
         if not self.calc_fig.axes:
             self.calc_fig.add_subplot(111)
         ax = self.calc_fig.axes[0]
