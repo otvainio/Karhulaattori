@@ -6,7 +6,13 @@ A comprehensive math solver desktop app built with PyQt6, SymPy, NumPy, SciPy, a
 
 ### Recommended — uv (installs everything in one command)
 
-If you don't have uv, install it with winget:
+If you don't have Git, install it first:
+
+```bash
+winget install --id Git.Git -e
+```
+
+If you don't have uv, install it:
 
 ```bash
 winget install --id astral-sh.uv -e
