@@ -2960,11 +2960,17 @@ class Karhulaattori(QMainWindow):
 
         in_grp = QGroupBox("Input Preview")
         ig = QVBoxLayout(in_grp)
-        self.calc_input_latex = LatexCanvas(height=120)
+        self.calc_input_latex = LatexCanvas(height=100)
         ig.addWidget(self.calc_input_latex)
         ig.addWidget(self._copy_latex_btn(self.calc_input_latex), alignment=Qt.AlignmentFlag.AlignRight)
         right_layout.addWidget(in_grp)
-        right_layout.addStretch()
+
+        plot_grp = QGroupBox("Plot")
+        pg = QVBoxLayout(plot_grp)
+        pg.setContentsMargins(4, 4, 4, 4)
+        self.calc_fig, self.calc_canvas = self._make_figure()
+        pg.addWidget(self.calc_canvas)
+        right_layout.addWidget(plot_grp, 1)
 
         outer.addWidget(right, 3)
 
@@ -2993,6 +2999,8 @@ class Karhulaattori(QMainWindow):
                 res = sympy.diff(expr, x)
                 _show("d/d" + v + "  f(" + v + ")",
                       r"\frac{d}{d" + v + r"}\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+                x0 = sympy.sympify(self.calc_point.text())
+                self._plot_calculus(action, expr, x, x0=x0)
 
             elif action == "nth_derivative":
                 n = int(sympy.sympify(self.calc_order.text()))
@@ -3000,6 +3008,8 @@ class Karhulaattori(QMainWindow):
                 _show(f"d^{n}/d{v}^{n}  f({v})",
                       r"\frac{d^{" + str(n) + r"}}{d" + v + r"^{" + str(n) + r"}}"
                       r"\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+                x0 = sympy.sympify(self.calc_point.text())
+                self._plot_calculus(action, expr, x, x0=x0)
 
             elif action == "eval_derivative":
                 x0 = sympy.sympify(self.calc_point.text())
@@ -3012,11 +3022,13 @@ class Karhulaattori(QMainWindow):
                     pass
                 _show(f"f'({x0}){num_str}",
                       r"f'\!\left(" + sympy.latex(x0) + r"\right) = " + sympy.latex(res))
+                self._plot_calculus(action, expr, x, x0=x0)
 
             elif action == "indefinite_integral":
                 res = sympy.integrate(expr, x)
                 _show("∫ f(" + v + ") d" + v,
                       r"\int " + sympy.latex(expr) + r"\, d" + v + r" = " + sympy.latex(res) + r" + C")
+                self._plot_calculus(action, expr, x)
 
             elif action == "definite_integral":
                 a = sympy.sympify(self.calc_a.text())
@@ -3031,6 +3043,7 @@ class Karhulaattori(QMainWindow):
                 _show(f"∫ f({v}) d{v}  from {a} to {b}{num_str}",
                       r"\int_{" + sympy.latex(a) + r"}^{" + sympy.latex(b) + r"} "
                       + sympy.latex(expr) + r"\, d" + v + r" = " + sympy.latex(res))
+                self._plot_calculus(action, expr, x, a=a, b=b)
 
             elif action in ("limit", "limit_right", "limit_left"):
                 x0 = sympy.sympify(self.calc_point.text())
@@ -3064,6 +3077,7 @@ class Karhulaattori(QMainWindow):
                 _show(f"Taylor series around {v}={x0}, order {n}",
                       sympy.latex(expr) + r" \approx " + sympy.latex(sympy.expand(poly))
                       + r" + O\!\left((" + v + r"-" + sympy.latex(x0) + r")^{" + str(n + 1) + r"}\right)")
+                self._plot_calculus(action, expr, x, x0=x0, n=n)
 
             elif action == "critical_points":
                 deriv = sympy.diff(expr, x)
@@ -3097,6 +3111,7 @@ class Karhulaattori(QMainWindow):
                 else:
                     _show("No real critical points",
                           r"f'(" + v + r") = " + sympy.latex(deriv) + r" = 0 \Rightarrow \text{no real roots}")
+                self._plot_calculus(action, expr, x)
 
             elif action == "partial_fractions":
                 res = sympy.apart(expr, x)
@@ -3111,6 +3126,97 @@ class Karhulaattori(QMainWindow):
         except Exception as e:
             self.calc_output.setHtml(self._err_html(e))
             self.calc_result_latex.render("")
+
+    def _plot_calculus(self, action, expr, x, x0=None, a=None, b=None, n=None):
+        if not self.calc_fig.axes:
+            self.calc_fig.add_subplot(111)
+        ax = self.calc_fig.axes[0]
+        ax.clear()
+        self._style_axes(ax)
+        v = str(x)
+
+        # Choose x range
+        if action == "definite_integral" and a is not None and b is not None:
+            fa, fb = float(a), float(b)
+            margin = max((fb - fa) * 0.6, 1.5)
+            xlo, xhi = fa - margin, fb + margin
+        elif x0 is not None:
+            x0f = float(x0)
+            xlo, xhi = x0f - 4, x0f + 4
+        else:
+            xlo, xhi = -5, 5
+
+        xs = np.linspace(xlo, xhi, 500)
+        try:
+            f_num = sympy.lambdify(x, expr, modules=['numpy'])
+            ys = np.array(f_num(xs), dtype=float)
+            # clip extreme values so the plot doesn't go crazy
+            clip = max(np.nanpercentile(np.abs(ys[np.isfinite(ys)]), 95) * 4, 10) if np.any(np.isfinite(ys)) else 10
+            ys = np.where(np.abs(ys) > clip, np.nan, ys)
+        except Exception:
+            self.calc_canvas.draw_idle()
+            return
+
+        ax.plot(xs, ys, color='#88c0d0', linewidth=2, label=f'f({v})', zorder=3)
+
+        if action in ("derivative", "nth_derivative", "eval_derivative") and x0 is not None:
+            x0f = float(x0)
+            try:
+                slope = float(sympy.diff(expr, x).subs(x, x0).evalf())
+                y0    = float(expr.subs(x, x0).evalf())
+                dx    = (xhi - xlo) * 0.25
+                tx    = np.array([x0f - dx, x0f + dx])
+                ax.plot(tx, slope * (tx - x0f) + y0,
+                        color='#ebcb8b', linewidth=1.8, linestyle='--',
+                        label=f"tangent  slope={slope:.4g}", zorder=4)
+                ax.scatter([x0f], [y0], color='#bf616a', s=60, zorder=5)
+            except Exception:
+                pass
+
+        elif action == "definite_integral" and a is not None and b is not None:
+            fa, fb = float(a), float(b)
+            xfill = np.linspace(fa, fb, 400)
+            try:
+                yfill = np.array(f_num(xfill), dtype=float)
+                ax.fill_between(xfill, 0, yfill, alpha=0.40,
+                                color='#a3be8c', label=f"∫ from {fa} to {fb}", zorder=2)
+                ax.axvline(fa, color='#a3be8c', linewidth=1, linestyle=':')
+                ax.axvline(fb, color='#a3be8c', linewidth=1, linestyle=':')
+            except Exception:
+                pass
+
+        elif action == "taylor" and x0 is not None and n is not None:
+            x0f = float(x0)
+            try:
+                poly = sympy.series(expr, x, x0, n + 1).removeO()
+                p_num = sympy.lambdify(x, sympy.expand(poly), modules=['numpy'])
+                yp = np.array(p_num(xs), dtype=float)
+                yp = np.where(np.abs(yp) > clip * 2, np.nan, yp)
+                ax.plot(xs, yp, color='#ebcb8b', linewidth=1.8, linestyle='--',
+                        label=f"Taylor order {n}", zorder=4)
+                ax.axvline(x0f, color='#616e88', linewidth=0.8, linestyle=':')
+            except Exception:
+                pass
+
+        elif action == "critical_points":
+            try:
+                crits = sympy.solve(sympy.diff(expr, x), x)
+                for cp in crits:
+                    cpf = float(cp.evalf())
+                    if not (xlo <= cpf <= xhi):
+                        continue
+                    ycp = float(expr.subs(x, cp).evalf())
+                    ax.scatter([cpf], [ycp], color='#bf616a', s=70, zorder=5)
+                    ax.annotate(f"x={cpf:.3g}", (cpf, ycp),
+                                textcoords="offset points", xytext=(5, 5),
+                                color='#d8dee9', fontsize=8)
+            except Exception:
+                pass
+
+        ax.axhline(0, color='#4c566a', linewidth=0.7)
+        ax.axvline(0, color='#4c566a', linewidth=0.7)
+        ax.legend(fontsize=8, loc='best')
+        self.calc_canvas.draw_idle()
 
     # ══════════════════════════════════════════════════════════════════════
     # Differential Equations tab
