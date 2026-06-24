@@ -2998,7 +2998,7 @@ class Karhulaattori(QMainWindow):
             if action == "derivative":
                 res = sympy.diff(expr, x)
                 _show("d/d" + v + "  f(" + v + ")",
-                      r"\frac{d}{d" + v + r"}\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+                      r"\frac{d}{d" + v + r"}\left(" + sympy.latex(expr) + r"\right) = " + sympy.latex(res))
                 x0 = sympy.sympify(self.calc_point.text())
                 self._plot_calculus(action, expr, x, x0=x0)
 
@@ -3007,7 +3007,7 @@ class Karhulaattori(QMainWindow):
                 res = sympy.diff(expr, x, n)
                 _show(f"d^{n}/d{v}^{n}  f({v})",
                       r"\frac{d^{" + str(n) + r"}}{d" + v + r"^{" + str(n) + r"}}"
-                      r"\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+                      r"\left(" + sympy.latex(expr) + r"\right) = " + sympy.latex(res))
                 x0 = sympy.sympify(self.calc_point.text())
                 self._plot_calculus(action, expr, x, x0=x0)
 
@@ -3067,7 +3067,7 @@ class Karhulaattori(QMainWindow):
                     pass
                 _show(lbl + num_str,
                       r"\lim_{" + v + arrow + sympy.latex(x0) + r"}"
-                      r"\bigl(" + sympy.latex(expr) + r"\bigr) = " + sympy.latex(res))
+                      r"\left(" + sympy.latex(expr) + r"\right) = " + sympy.latex(res))
 
             elif action == "taylor":
                 n = int(sympy.sympify(self.calc_order.text()))
