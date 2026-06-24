@@ -2996,7 +2996,7 @@ class Karhulaattori(QMainWindow):
                 self._add_to_global_history("Calculus", action, self.calc_expr.text(), header)
 
             if action == "derivative":
-                res = sympy.diff(expr, x)
+                res = sympy.expand(sympy.diff(expr, x))
                 _show("d/d" + v + "  f(" + v + ")",
                       r"\frac{d}{d" + v + r"}\left(" + sympy.latex(expr) + r"\right) = " + sympy.latex(res))
                 x0 = sympy.sympify(self.calc_point.text())
@@ -3004,7 +3004,7 @@ class Karhulaattori(QMainWindow):
 
             elif action == "nth_derivative":
                 n = int(sympy.sympify(self.calc_order.text()))
-                res = sympy.diff(expr, x, n)
+                res = sympy.expand(sympy.diff(expr, x, n))
                 _show(f"d^{n}/d{v}^{n}  f({v})",
                       r"\frac{d^{" + str(n) + r"}}{d" + v + r"^{" + str(n) + r"}}"
                       r"\left(" + sympy.latex(expr) + r"\right) = " + sympy.latex(res))
