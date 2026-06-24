@@ -80,6 +80,7 @@ Python >= 3.10, all dependencies are declared in `pyproject.toml` and installed 
 - Limits, Taylor/Maclaurin series
 - Critical points and inflection points
 - LaTeX output and input preview
+- **Live plots** — tangent line at x₀ for derivatives, shaded area for definite integrals, Taylor polynomial overlaid on f(x), critical points marked on curve
 
 ### Differential Equations
 - **Symbolic ODE** — dsolve with general/particular solutions, initial condition parser (`y(0)=1, y'(0)=0`), auto-plot; presets for Harmonic, Damped, Forced, Logistic, Bessel, Euler
